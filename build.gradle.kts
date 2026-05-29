@@ -8,12 +8,10 @@ application {
     mainClass.set("com.assistant.ApplicationKt")
 }
 
+// Add this for Ktor plugin compatibility
 tasks.named<JavaExec>("run") {
     mainClass.set("com.assistant.ApplicationKt")
 }
-
-// Add this for Ktor plugin compatibility
-project.setProperty("mainClassName", "com.assistant.ApplicationKt")
 
 dependencies {
     // Ktor server
