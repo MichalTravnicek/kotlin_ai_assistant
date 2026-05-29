@@ -1,12 +1,16 @@
 plugins {
     kotlin("jvm") version "2.1.10"
-    id("io.ktor.plugin") version "3.0.3"
-    kotlin("plugin.serialization") version "1.9.22"
+    id("com.gradleup.shadow") version "9.3.1"
+    id("io.ktor.plugin") version "3.1.0"
+    kotlin("plugin.serialization") version "2.1.10"
 }
 
 application {
     mainClass.set("com.assistant.ApplicationKt")
 }
+
+// Fixed visual mapping needed for certain internal Ktor task properties
+extra["mainClassName"] = "com.assistant.ApplicationKt"
 
 dependencies {
     // Ktor server
@@ -19,10 +23,10 @@ dependencies {
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json")
 
     // Coroutines
-    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.8.0")
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.10.1") // Upgraded for compatibility
 
     // Logging
-    implementation("ch.qos.logback:logback-classic:1.5.0")
+    implementation("ch.qos.logback:logback-classic:1.5.16")
 }
 
 java {
@@ -35,7 +39,3 @@ tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompile>().configureEach 
         jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_21)
     }
 }
-
-//kotlin {
-//    jvmToolchain(21)
-//}
