@@ -8,6 +8,13 @@ application {
     mainClass.set("com.assistant.ApplicationKt")
 }
 
+tasks.named<JavaExec>("run") {
+    mainClass.set("com.assistant.ApplicationKt")
+}
+
+// Add this for Ktor plugin compatibility
+project.setProperty("mainClassName", "com.assistant.ApplicationKt")
+
 dependencies {
     // Ktor server
     implementation("io.ktor:ktor-server-core")
@@ -35,7 +42,3 @@ tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompile>().configureEach 
         jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_21)
     }
 }
-
-//kotlin {
-//    jvmToolchain(21)
-//}
