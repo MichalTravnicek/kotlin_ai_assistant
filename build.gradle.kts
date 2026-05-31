@@ -3,6 +3,7 @@ plugins {
     id("com.gradleup.shadow") version "9.3.1"
     id("io.ktor.plugin") version "3.1.0"
     kotlin("plugin.serialization") version "2.1.10"
+    jacoco
 }
 
 application {
@@ -11,6 +12,10 @@ application {
 
 // Fixed visual mapping needed for certain internal Ktor task properties
 extra["mainClassName"] = "com.assistant.ApplicationKt"
+
+jacoco {
+    toolVersion = "0.8.14"
+}
 
 dependencies {
     // Ktor server
@@ -23,7 +28,7 @@ dependencies {
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json")
 
     // Coroutines
-    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.10.1") // Upgraded for compatibility
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.10.1")
 
     // Logging
     implementation("ch.qos.logback:logback-classic:1.5.16")
@@ -42,5 +47,18 @@ java {
 tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompile>().configureEach {
     compilerOptions {
         jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_21)
+    }
+}
+
+tasks.test {
+    finalizedBy(tasks.jacocoTestReport) // Automatically run jacocoTestReport after tests finish
+}
+
+tasks.jacocoTestReport {
+    dependsOn(tasks.test) // Ensure tests have actually run before generating reports
+
+    reports {
+        xml.required.set(true)  // Useful for CI/CD pipelines (SonarQube, GitHub Actions, etc.)
+        html.required.set(true) // Human-readable report
     }
 }
