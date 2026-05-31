@@ -27,6 +27,11 @@ dependencies {
 
     // Logging
     implementation("ch.qos.logback:logback-classic:1.5.16")
+
+    // Test
+    testImplementation("org.jetbrains.kotlin:kotlin-test:2.1.10")
+    testImplementation("io.ktor:ktor-server-test-host")
+    testImplementation("io.ktor:ktor-client-content-negotiation")
 }
 
 java {

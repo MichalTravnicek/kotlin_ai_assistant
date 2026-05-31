@@ -10,4 +10,5 @@
     </root>
 
     <logger name="io.ktor" level="info" />
+    <logger name="com.assistant" level="debug" />
 </configuration>
