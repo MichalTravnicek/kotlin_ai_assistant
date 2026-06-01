@@ -42,7 +42,10 @@ class SimpleTokenizer {
 
             // General info
             "who", "made", "created", "you", "creator", "kdo_te", "vytvoril", "author",
-            "cim_jsi", "co_jsi_zac",
+            "cim_jsi", "co_jsi_zac", "kdo_jsi", "who_made_you",
+            "how_are_you", "what_is_your_name", "good_morning", "what_can_you_do",
+            "what_can_you", "whats_your_name", "how_are_you_doing", "co_jsi_zac",
+            "kdo_te_vytvoril", "kolik_je_hodin",
 
             // Default/common words
             "the", "a", "an", "in", "of", "to", "for", "with", "on", "at", "by",
