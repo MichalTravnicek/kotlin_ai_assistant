@@ -37,6 +37,8 @@ dependencies {
     testImplementation("org.jetbrains.kotlin:kotlin-test:2.1.10")
     testImplementation("io.ktor:ktor-server-test-host")
     testImplementation("io.ktor:ktor-client-content-negotiation")
+    testImplementation("org.jetbrains.kotlin:kotlin-test-junit5:2.1.10")
+    testRuntimeOnly("org.junit.platform:junit-platform-launcher")
 }
 
 java {
@@ -51,6 +53,7 @@ tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompile>().configureEach 
 }
 
 tasks.test {
+    useJUnitPlatform()
     finalizedBy(tasks.jacocoTestReport) // Automatically run jacocoTestReport after tests finish
 }
 
