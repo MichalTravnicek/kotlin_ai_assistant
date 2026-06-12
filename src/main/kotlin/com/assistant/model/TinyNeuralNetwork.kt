@@ -104,7 +104,7 @@ class TinyNeuralNetwork private constructor(
             val embedDim = 16
             val maxSeqLen = tokenizer.getMaxSequenceLength()
             val hiddenSize = 32
-            val numIntents = 10
+            val numIntents = 14
 
             val intents = listOf(
                 IntentLabel("greeting", "Pozdrav", "Ahoj! Jak vám mohu pomoci? 🇨🇿"),
@@ -144,6 +144,26 @@ class TinyNeuralNetwork private constructor(
                     "unknown",
                     "Neznámý",
                     "Omlouvám se, nerozumím vašemu dotazu. Zkuste to prosím jinak nebo použijte angličtinu / češtinu."
+                ),
+                IntentLabel(
+                    "sql_query",
+                    "SQL dotaz na data",
+                    "Vidím že se ptáte na data v databázi. Použijte SQL panel (🗄️) nebo napište dotaz jako: 'show employees' nebo 'count products'."
+                ),
+                IntentLabel(
+                    "sql_join",
+                    "SQL spojení tabulek",
+                    "Chcete spojit tabulky? V SQL panelu zkuste: 'join employees and departments' nebo 'join employees and products'."
+                ),
+                IntentLabel(
+                    "sql_aggregate",
+                    "SQL agregace",
+                    "Chcete agregační dotaz? Zkuste v SQL panelu: 'average salary by department' nebo 'cheapest product'."
+                ),
+                IntentLabel(
+                    "sql_help",
+                    "SQL nápověda",
+                    "SQL client umí: 'show tables', 'show employees', 'find products with price > 50', 'count products', 'average salary by department', 'join employees and departments', nebo 'custom SELECT * FROM employees'."
                 )
             )
 
@@ -157,6 +177,10 @@ class TinyNeuralNetwork private constructor(
             val WEATHER = 7;
             val TIME = 8;
             val UNKNOWN = 9
+            val SQL_QUERY = 10
+            val SQL_JOIN = 11
+            val SQL_AGGREGATE = 12
+            val SQL_HELP = 13
 
             // ---- Embeddings ----
             // For each word w with intent i and strength s:
@@ -240,6 +264,37 @@ class TinyNeuralNetwork private constructor(
             setWord("hodiny", TIME, 2.5f); setWord("kolik_je", TIME, 3.0f)
             setWord("today", TIME, 1.5f); setWord("dneska", TIME, 1.5f)
             setWord("zitra", TIME, 1.5f)
+
+            // SQL query / data lookup
+            setWord("show", SQL_QUERY, 3.0f); setWord("select", SQL_QUERY, 3.0f)
+            setWord("find", SQL_QUERY, 2.5f); setWord("where", SQL_QUERY, 2.0f)
+            setWord("employees", SQL_QUERY, 2.5f); setWord("products", SQL_QUERY, 2.0f)
+            setWord("tables", SQL_QUERY, 3.0f); setWord("table", SQL_QUERY, 2.5f)
+            setWord("search", SQL_QUERY, 2.0f); setWord("zobraz", SQL_QUERY, 3.0f)
+            setWord("vsechny", SQL_QUERY, 2.0f); setWord("data", SQL_QUERY, 2.0f)
+            setWord("dotaz", SQL_QUERY, 2.5f); setWord("databaze", SQL_QUERY, 2.5f)
+            setWord("record", SQL_QUERY, 1.5f); setWord("records", SQL_QUERY, 1.5f)
+
+            // SQL join
+            setWord("join", SQL_JOIN, 3.5f); setWord("joined", SQL_JOIN, 3.0f)
+            setWord("spoj", SQL_JOIN, 3.5f); setWord("spojeni", SQL_JOIN, 3.0f)
+            setWord("together", SQL_JOIN, 2.0f); setWord("relate", SQL_JOIN, 2.0f)
+            setWord("combine", SQL_JOIN, 2.5f); setWord("zkombinovat", SQL_JOIN, 2.5f)
+
+            // SQL aggregate
+            setWord("count", SQL_AGGREGATE, 3.0f); setWord("average", SQL_AGGREGATE, 3.0f)
+            setWord("avg", SQL_AGGREGATE, 3.0f); setWord("prumer", SQL_AGGREGATE, 3.5f)
+            setWord("sum", SQL_AGGREGATE, 2.5f); setWord("total", SQL_AGGREGATE, 2.5f)
+            setWord("soucet", SQL_AGGREGATE, 3.0f); setWord("pocet", SQL_AGGREGATE, 3.0f)
+            setWord("kolik", SQL_AGGREGATE, 2.5f); setWord("cheapest", SQL_AGGREGATE, 2.5f)
+            setWord("nejlevnejsi", SQL_AGGREGATE, 3.0f); setWord("nejdrazsi", SQL_AGGREGATE, 3.0f)
+            setWord("salary", SQL_AGGREGATE, 2.5f); setWord("plati", SQL_AGGREGATE, 2.5f)
+            setWord("group", SQL_AGGREGATE, 2.0f); setWord("skupina", SQL_AGGREGATE, 2.0f)
+
+            // SQL help
+            setWord("sql", SQL_HELP, 3.5f); setWord("help", SQL_HELP, 2.0f)
+            setWord("napoveda", SQL_HELP, 3.0f); setWord("priklady", SQL_HELP, 2.5f)
+            setWord("examples", SQL_HELP, 2.5f); setWord("commands", SQL_HELP, 2.0f)
 
             // ---- Hidden weights w1: (maxSeqLen*embedDim) × hiddenSize ----
             // Hidden h (0..9) collects all flat-input values from embedding
