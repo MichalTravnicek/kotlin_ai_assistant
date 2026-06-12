@@ -61,7 +61,47 @@ class TinyNeuralNetworkTest {
             val tokens = tokenizer.tokenize(greeting)
             val result = model.predict(tokens)
             assertEquals("greeting", result.intent.id, "\"$greeting\" should be greeting, was ${result.intent.id}")
-            assertTrue(result.confidence > 0.5f, "\"$greeting\" confidence should be > 50%, was ${result.confidence}")
+            assertTrue(result.confidence > 0.8f, "\"$greeting\" confidence should be > 80%, was ${result.confidence}")
         }
+    }
+
+    @Test
+    fun `jak se mas returns how_are_you with high confidence`() {
+        val tokenizer = SimpleTokenizer()
+        val model = TinyNeuralNetwork.buildPretrained(tokenizer)
+
+        val tokens = tokenizer.tokenize("jak se mas")
+        val result = model.predict(tokens)
+
+        assertEquals("how_are_you", result.intent.id, "\"jak se mas\" should be how_are_you, was ${result.intent.id}")
+        assertTrue(result.confidence > 0.9f, "\"jak se mas\" confidence should be > 90%, was ${result.confidence}")
+    }
+
+    @Test
+    fun `co umis returns capabilities with high confidence`() {
+        val tokenizer = SimpleTokenizer()
+        val model = TinyNeuralNetwork.buildPretrained(tokenizer)
+
+        val tokens = tokenizer.tokenize("co umis")
+        val result = model.predict(tokens)
+
+        assertEquals("capabilities", result.intent.id, "\"co umis\" should be capabilities, was ${result.intent.id}")
+        assertTrue(result.confidence > 0.9f, "\"co umis\" confidence should be > 90%, was ${result.confidence}")
+    }
+
+    @Test
+    fun `kdo te stvoril returns who_made_you with high confidence`() {
+        val tokenizer = SimpleTokenizer()
+        val model = TinyNeuralNetwork.buildPretrained(tokenizer)
+
+        val tokens = tokenizer.tokenize("kdo te stvoril")
+        val result = model.predict(tokens)
+
+        assertEquals(
+            "who_made_you",
+            result.intent.id,
+            "\"kdo te stvoril\" should be who_made_you, was ${result.intent.id}"
+        )
+        assertTrue(result.confidence > 0.9f, "\"kdo te stvoril\" confidence should be > 90%, was ${result.confidence}")
     }
 }
