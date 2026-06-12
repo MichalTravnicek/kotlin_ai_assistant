@@ -147,9 +147,16 @@ class TinyNeuralNetwork private constructor(
                 )
             )
 
-            val GREETING = 0; val FAREWELL = 1; val ASK_NAME = 2
-            val CAPABILITIES = 3; val HOW_ARE_YOU = 4; val PROGRAMMING = 5
-            val WHO_MADE_YOU = 6; val WEATHER = 7; val TIME = 8; val UNKNOWN = 9
+            val GREETING = 0;
+            val FAREWELL = 1;
+            val ASK_NAME = 2
+            val CAPABILITIES = 3;
+            val HOW_ARE_YOU = 4;
+            val PROGRAMMING = 5
+            val WHO_MADE_YOU = 6;
+            val WEATHER = 7;
+            val TIME = 8;
+            val UNKNOWN = 9
 
             // ---- Embeddings ----
             // For each word w with intent i and strength s:
@@ -196,24 +203,29 @@ class TinyNeuralNetwork private constructor(
             setWord("funkce", CAPABILITIES, 1.5f); setWord("help", CAPABILITIES, 1.5f)
 
             // How are you
-            setWord("jak_se_mas", HOW_ARE_YOU, 3.0f); setWord("howdy", HOW_ARE_YOU, 2.5f)
-            setWord("co_rikas", HOW_ARE_YOU, 2.5f); setWord("doing", HOW_ARE_YOU, 2.0f)
-            setWord("mas", HOW_ARE_YOU, 2.0f)
+            setWord("jak", HOW_ARE_YOU, 2.5f)
+            setWord("se", HOW_ARE_YOU, 2.0f); setWord("mas", HOW_ARE_YOU, 2.5f)
+            setWord("how", HOW_ARE_YOU, 2.5f); setWord("are", HOW_ARE_YOU, 2.5f)
+            setWord("doing", HOW_ARE_YOU, 2.0f); setWord("feeling", HOW_ARE_YOU, 2.0f)
+            setWord("howdy", HOW_ARE_YOU, 2.5f); setWord("co_rikas", HOW_ARE_YOU, 2.5f)
 
             // Programming
             setWord("kotlin", PROGRAMMING, 3.0f); setWord("programming", PROGRAMMING, 2.5f)
             setWord("java", PROGRAMMING, 2.5f); setWord("function", PROGRAMMING, 2.5f)
             setWord("programovani", PROGRAMMING, 3.0f); setWord("kod", PROGRAMMING, 2.5f)
-            setWord("napsat", PROGRAMMING, 2.0f); setWord("variable", PROGRAMMING, 2.0f)
+            setWord("napis", PROGRAMMING, 3.0f); setWord("variable", PROGRAMMING, 2.0f)
+            setWord("funkci", PROGRAMMING, 3.0f); setWord("program", PROGRAMMING, 2.0f)
             setWord("class", PROGRAMMING, 2.0f); setWord("code", PROGRAMMING, 2.0f)
             setWord("how_to", PROGRAMMING, 2.0f); setWord("promenna", PROGRAMMING, 2.0f)
             setWord("trida", PROGRAMMING, 2.0f); setWord("vytvorit", PROGRAMMING, 1.5f)
 
             // Who made you
-            setWord("who_made_you", WHO_MADE_YOU, 3.0f); setWord("kdo_te", WHO_MADE_YOU, 3.0f)
+            setWord("te", WHO_MADE_YOU, 3.0f)
+            setWord("kdo_te", WHO_MADE_YOU, 3.0f)
             setWord("vytvoril", WHO_MADE_YOU, 2.5f); setWord("creator", WHO_MADE_YOU, 2.5f)
             setWord("author", WHO_MADE_YOU, 2.0f); setWord("cim_jsi", WHO_MADE_YOU, 2.0f)
             setWord("made", WHO_MADE_YOU, 2.0f); setWord("created", WHO_MADE_YOU, 2.0f)
+            setWord("stvoril", WHO_MADE_YOU, 3.0f); setWord("kdo", WHO_MADE_YOU, 1.0f)
 
             // Weather
             setWord("weather", WEATHER, 2.5f); setWord("pocasi", WEATHER, 3.0f)

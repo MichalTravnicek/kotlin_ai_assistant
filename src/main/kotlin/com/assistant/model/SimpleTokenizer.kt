@@ -17,35 +17,34 @@ class SimpleTokenizer {
         val vocabulary = listOf(
             // Greetings
             "hello", "hi", "hey", "ahoj", "cau", "zdravim", "good", "morning", "afternoon",
-            "evening", "dobry", "den", "dobry_den", "nazdar",
+            "evening", "dobry", "den", "nazdar",
 
             // Farewells
-            "bye", "goodbye", "farewell", "see", "you", "later", "cau_nazdar", "nashledanou",
-            "night", "good_night", "exit", "quit", "end", "stop",
+            "bye", "goodbye", "farewell", "see", "you", "later", "nashledanou",
+            "night", "exit", "quit", "end", "stop",
 
             // Name-related
             "name", "your", "whats", "what", "is", "jmenujes", "jmenuji", "kdo", "jsi",
             "are", "you", "call", "yourself",
 
             // Capabilities
-            "what_can", "can", "you", "do", "capabilities", "features", "help", "umis",
+            "can", "you", "do", "capabilities", "features", "help", "umis",
             "co", "umi", "dokazes", "funkce", "moznosti",
 
             // How are you
-            "how", "are", "you", "doing", "feeling", "jak_se_mas", "jak", "se", "mas",
+            "how", "are", "you", "doing", "feeling", "jak", "se", "mas",
             "howdy", "co_rikas",
 
             // Programming questions
             "code", "programming", "kotlin", "java", "function", "variable", "class",
             "how_to", "write", "create", "make", "use", "implement", "example", "kod",
             "programovani", "funkce", "promenna", "trida", "napsat", "vytvorit",
+            "napis", "funkci", "program",
 
             // General info
             "who", "made", "created", "you", "creator", "kdo_te", "vytvoril", "author",
-            "cim_jsi", "co_jsi_zac", "kdo_jsi", "who_made_you",
-            "how_are_you", "what_is_your_name", "good_morning", "what_can_you_do",
-            "what_can_you", "whats_your_name", "how_are_you_doing", "co_jsi_zac",
-            "kdo_te_vytvoril", "kolik_je_hodin",
+            "cim_jsi",
+            "stvoril", "te",
 
             // Default/common words
             "the", "a", "an", "in", "of", "to", "for", "with", "on", "at", "by",

@@ -8,6 +8,7 @@ A lightweight AI assistant built entirely in Kotlin with a **tiny neural network
 - **Intent Classification** — recognizes 10 intent types in Czech and English
 - **Conversation Memory** — in-memory session history with context-aware follow-up detection
 - **REST API** — Ktor server with JSON endpoints
+- **Web UI** — built-in HTML chat interface at `http://localhost:8080/`
 
 ## Tech Stack
 
