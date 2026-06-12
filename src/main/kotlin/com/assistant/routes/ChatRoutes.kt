@@ -20,6 +20,15 @@ fun Route.chatRoutes(model: TinyNeuralNetwork, tokenizer: SimpleTokenizer) {
     val memory = ConversationMemory()
     val log = LoggerFactory.getLogger("com.assistant.routes.ChatRoutes")
 
+    // GET / — Web UI
+    get("/") {
+        val html = this::class.java.classLoader
+            .getResource("web/index.html")
+            ?.readText()
+            ?: error("web/index.html not found in resources")
+        call.respondText(html, ContentType.Text.Html)
+    }
+
     // POST /chat — send a message to the assistant
     post("/chat") {
         val request = call.receive<ChatRequest>()
@@ -127,11 +136,13 @@ fun Route.chatRoutes(model: TinyNeuralNetwork, tokenizer: SimpleTokenizer) {
 
     // GET /status — model info
     get("/status") {
+        val sessionId = call.request.queryParameters["sessionId"] ?: "default"
+        val history = memory.getHistory(sessionId)
         log.info(">>> GET /status")
         call.respond(
             StatusResponse(
                 status = "ready",
-                sessionCount = 0,
+                sessionCount = history.size,
                 modelType = "TinyNeuralNetwork (embed=16)",
                 vocabularySize = tokenizer.vocabularySize()
             )

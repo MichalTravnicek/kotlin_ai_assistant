@@ -12,6 +12,7 @@ import kotlinx.serialization.json.Json
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
+import kotlin.test.assertNotNull
 
 class ChatRoutesTest {
 
@@ -147,4 +148,14 @@ class ChatRoutesTest {
         assertTrue(body.contains("greeting"), "Lowercase 'ahoj' should also produce greeting intent")
     }
 
+    @Test
+    fun `GET root returns HTML page`() = testApp {
+        val response = client.get("/")
+        assertEquals(HttpStatusCode.OK, response.status)
+        val contentType = response.contentType()
+        assertNotNull(contentType, "Response should have a Content-Type header")
+        assertTrue(contentType.toString().contains("html"), "Content-Type should contain 'html', got: $contentType")
+        val body = response.bodyAsText()
+        assertTrue(body.contains("Kotlin AI Assistant"), "HTML should contain title 'Kotlin AI Assistant'")
+    }
 }
