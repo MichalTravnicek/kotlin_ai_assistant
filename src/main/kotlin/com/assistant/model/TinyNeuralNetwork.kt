@@ -117,7 +117,8 @@ class TinyNeuralNetwork private constructor(
                 IntentLabel(
                     "capabilities",
                     "Schopnosti",
-                    "Umím odpovídat na základní otázky, zdravit, říct své jméno, a reagovat na jednoduché konverzační podněty. Jsem malý model přímo v Kotlin!"
+                    "Umím odpovídat na základní otázky, zdravit, říct své jméno, a reagovat na jednoduché konverzační podněty. " +
+                            "V okně SQL Query pomůžu s hledáním v databázi. Jsem malý model přímo v Kotlinu!"
                 ),
                 IntentLabel("how_are_you", "Jak se máš", "Jsem jen program, ale funguji skvěle! Děkuji za optání."),
                 IntentLabel(
@@ -141,30 +142,35 @@ class TinyNeuralNetwork private constructor(
                     "Pro aktuální čas a datum se podívejte na systémové hodiny. Já k nim nemám přímý přístup."
                 ),
                 IntentLabel(
-                    "unknown",
-                    "Neznámý",
-                    "Omlouvám se, nerozumím vašemu dotazu. Zkuste to prosím jinak nebo použijte angličtinu / češtinu."
-                ),
-                IntentLabel(
                     "sql_query",
+                    "\uD83D\uDE02",
                     "SQL dotaz na data",
-                    "Vidím že se ptáte na data v databázi. Použijte SQL panel (🗄️) nebo napište dotaz jako: 'show employees' nebo 'count products'."
+                    "Vidím že se ptáte na data v databázi. Použijte SQL panel (🗄️) a napište dotaz jako: 'show employees' nebo 'count products'."
                 ),
                 IntentLabel(
                     "sql_join",
+                    "\uD83D\uDE07",
                     "SQL spojení tabulek",
                     "Chcete spojit tabulky? V SQL panelu zkuste: 'join employees and departments' nebo 'join employees and products'."
                 ),
                 IntentLabel(
                     "sql_aggregate",
+                    "\uD83D\uDE09",
                     "SQL agregace",
                     "Chcete agregační dotaz? Zkuste v SQL panelu: 'average salary by department' nebo 'cheapest product'."
                 ),
                 IntentLabel(
                     "sql_help",
+                    "\uD83E\uDD70",
                     "SQL nápověda",
                     "SQL client umí: 'show tables', 'show employees', 'find products with price > 50', 'count products', 'average salary by department', 'join employees and departments', nebo 'custom SELECT * FROM employees'."
-                )
+                ),
+                IntentLabel(
+                    "unknown",
+                    "\uD83E\uDD2F",
+                    "Neznámý",
+                    "Omlouvám se, nerozumím vašemu dotazu. Zkuste to prosím jinak nebo použijte angličtinu / češtinu."
+                ),
             )
 
             val GREETING = 0;
@@ -176,11 +182,11 @@ class TinyNeuralNetwork private constructor(
             val WHO_MADE_YOU = 6;
             val WEATHER = 7;
             val TIME = 8;
-            val UNKNOWN = 9
-            val SQL_QUERY = 10
-            val SQL_JOIN = 11
-            val SQL_AGGREGATE = 12
-            val SQL_HELP = 13
+            val SQL_QUERY = 9
+            val SQL_JOIN = 10
+            val SQL_AGGREGATE = 11
+            val SQL_HELP = 12
+            val UNKNOWN = 13
 
             // ---- Embeddings ----
             // For each word w with intent i and strength s:
@@ -202,7 +208,7 @@ class TinyNeuralNetwork private constructor(
             }
 
             // Greeting
-            setWord("hello", GREETING, 2.0f); setWord("hi", GREETING, 2.0f)
+            setWord("hello", GREETING, 3.0f); setWord("hi", GREETING, 2.0f)
             setWord("hey", GREETING, 2.0f); setWord("ahoj", GREETING, 3.0f)
             setWord("cau", GREETING, 2.5f); setWord("nazdar", GREETING, 2.5f)
             setWord("zdravim", GREETING, 2.0f); setWord("good", GREETING, 1.5f)
@@ -217,6 +223,7 @@ class TinyNeuralNetwork private constructor(
 
             // Ask name
             setWord("name", ASK_NAME, 2.5f); setWord("jmenujes", ASK_NAME, 3.0f)
+            setWord("jmeno", ASK_NAME, 3.5f);
             setWord("whats", ASK_NAME, 2.0f); setWord("call", ASK_NAME, 1.5f)
             setWord("kdo", ASK_NAME, 1.5f); setWord("jsi", ASK_NAME, 1.0f)
 
@@ -224,7 +231,7 @@ class TinyNeuralNetwork private constructor(
             setWord("capabilities", CAPABILITIES, 2.5f); setWord("features", CAPABILITIES, 2.0f)
             setWord("dokazes", CAPABILITIES, 2.5f); setWord("umis", CAPABILITIES, 3.0f)
             setWord("umi", CAPABILITIES, 2.0f); setWord("moznosti", CAPABILITIES, 2.0f)
-            setWord("funkce", CAPABILITIES, 1.5f); setWord("help", CAPABILITIES, 1.5f)
+            setWord("funkce", CAPABILITIES, 1.5f); setWord("help", CAPABILITIES, 2.5f)
 
             // How are you
             setWord("jak", HOW_ARE_YOU, 2.5f)
@@ -266,35 +273,32 @@ class TinyNeuralNetwork private constructor(
             setWord("zitra", TIME, 1.5f)
 
             // SQL query / data lookup
-            setWord("show", SQL_QUERY, 3.0f); setWord("select", SQL_QUERY, 3.0f)
-            setWord("find", SQL_QUERY, 2.5f); setWord("where", SQL_QUERY, 2.0f)
-            setWord("employees", SQL_QUERY, 2.5f); setWord("products", SQL_QUERY, 2.0f)
-            setWord("tables", SQL_QUERY, 3.0f); setWord("table", SQL_QUERY, 2.5f)
-            setWord("search", SQL_QUERY, 2.0f); setWord("zobraz", SQL_QUERY, 3.0f)
-            setWord("vsechny", SQL_QUERY, 2.0f); setWord("data", SQL_QUERY, 2.0f)
-            setWord("dotaz", SQL_QUERY, 2.5f); setWord("databaze", SQL_QUERY, 2.5f)
-            setWord("record", SQL_QUERY, 1.5f); setWord("records", SQL_QUERY, 1.5f)
+            setWord("show", SQL_QUERY, 3.0f);
+            setWord("select", SQL_QUERY, 3.0f)
+            setWord("sql", SQL_QUERY, 2.5f);
+            setWord("data", SQL_QUERY, 2.0f)
+            setWord("dotaz", SQL_QUERY, 2.5f);
+            setWord("databaze", SQL_QUERY, 2.5f)
 
             // SQL join
-            setWord("join", SQL_JOIN, 3.5f); setWord("joined", SQL_JOIN, 3.0f)
-            setWord("spoj", SQL_JOIN, 3.5f); setWord("spojeni", SQL_JOIN, 3.0f)
-            setWord("together", SQL_JOIN, 2.0f); setWord("relate", SQL_JOIN, 2.0f)
-            setWord("combine", SQL_JOIN, 2.5f); setWord("zkombinovat", SQL_JOIN, 2.5f)
+            setWord("join", SQL_JOIN, 3.0f);
+            setWord("sql", SQL_JOIN, 3.0f);
+            setWord("spojeni", SQL_JOIN, 3.0f)
 
             // SQL aggregate
-            setWord("count", SQL_AGGREGATE, 3.0f); setWord("average", SQL_AGGREGATE, 3.0f)
-            setWord("avg", SQL_AGGREGATE, 3.0f); setWord("prumer", SQL_AGGREGATE, 3.5f)
-            setWord("sum", SQL_AGGREGATE, 2.5f); setWord("total", SQL_AGGREGATE, 2.5f)
-            setWord("soucet", SQL_AGGREGATE, 3.0f); setWord("pocet", SQL_AGGREGATE, 3.0f)
-            setWord("kolik", SQL_AGGREGATE, 2.5f); setWord("cheapest", SQL_AGGREGATE, 2.5f)
-            setWord("nejlevnejsi", SQL_AGGREGATE, 3.0f); setWord("nejdrazsi", SQL_AGGREGATE, 3.0f)
-            setWord("salary", SQL_AGGREGATE, 2.5f); setWord("plati", SQL_AGGREGATE, 2.5f)
-            setWord("group", SQL_AGGREGATE, 2.0f); setWord("skupina", SQL_AGGREGATE, 2.0f)
+            setWord("count", SQL_AGGREGATE, 3.0f);
+            setWord("average", SQL_AGGREGATE, 3.0f)
+            setWord("sql", SQL_AGGREGATE, 3.0f);
+            setWord("prumer", SQL_AGGREGATE, 3.5f)
+            setWord("group", SQL_AGGREGATE, 2.5f);
+            setWord("sum", SQL_AGGREGATE, 2.5f);
+            setWord("total", SQL_AGGREGATE, 2.5f);
 
             // SQL help
-            setWord("sql", SQL_HELP, 3.5f); setWord("help", SQL_HELP, 2.0f)
-            setWord("napoveda", SQL_HELP, 3.0f); setWord("priklady", SQL_HELP, 2.5f)
-            setWord("examples", SQL_HELP, 2.5f); setWord("commands", SQL_HELP, 2.0f)
+            setWord("sql", SQL_HELP, 3.5f);
+            setWord("help", SQL_HELP, 2.0f)
+            setWord("napoveda", SQL_HELP, 3.0f);
+            setWord("priklady", SQL_HELP, 2.5f)
 
             // ---- Hidden weights w1: (maxSeqLen*embedDim) × hiddenSize ----
             // Hidden h (0..9) collects all flat-input values from embedding
@@ -332,9 +336,17 @@ class TinyNeuralNetwork private constructor(
 
 data class IntentLabel(
     val id: String,
+    val emotion: String,
     val label: String,
     val response: String
-)
+) {
+    constructor(id: String, label: String, response: String) : this(
+        id = id,
+        emotion = "☀\uFE0F",
+        label = label,
+        response = response
+    )
+}
 
 data class ClassificationResult(
     val intent: IntentLabel,
