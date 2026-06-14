@@ -30,7 +30,6 @@ fun Route.sqlRoutes(db: DatabaseManager, interpreter: SqlPromptInterpreter) {
 
         try {
             val interpretation = interpreter.interpret(prompt)
-
             if (interpretation.sql.isBlank()) {
                 // Help / examples case
                 call.respond(

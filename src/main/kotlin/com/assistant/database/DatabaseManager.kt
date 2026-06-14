@@ -60,11 +60,12 @@ class DatabaseManager(dbPath: String = "mem:assistant_db") {
         "show employees",
         "find employees in Engineering",
         "count products",
-        "products with price > 50",
+        "products with price > 900",
         "join employees and departments",
         "average salary by department",
         "cheapest product",
-        "custom SELECT * FROM employees WHERE salary > 50000"
+        "employee with lowest salary",
+        "SELECT * FROM employees WHERE salary > 70000"
     )
 
     /**
@@ -101,6 +102,11 @@ class DatabaseManager(dbPath: String = "mem:assistant_db") {
                 stmt.executeUpdate(trimmed)
             }
         }
+    }
+
+    /** Query distinct text values from a column — used by SqlPromptInterpreter for dynamic value matching. */
+    fun queryDistinctValues(table: String, column: String): List<String> {
+        return query("SELECT DISTINCT $column FROM $table WHERE $column IS NOT NULL") { rs -> rs.getString(1) }
     }
 
     // ---------- private helpers ----------

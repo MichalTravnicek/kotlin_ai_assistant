@@ -24,7 +24,7 @@ fun main() {
     // Initialize the embedded database and SQL interpreter
     println("Initializing database...")
     val db = DatabaseManager()
-    val sqlInterpreter = SqlPromptInterpreter { db.getSchema() }
+    val sqlInterpreter = SqlPromptInterpreter({ db.getSchema() }, { table, col -> db.queryDistinctValues(table, col) })
 
     println("Starting Ktor server on http://localhost:8080")
     println("  Chat API:       POST http://localhost:8080/chat")
