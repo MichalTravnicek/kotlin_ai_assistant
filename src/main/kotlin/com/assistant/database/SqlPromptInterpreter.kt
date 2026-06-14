@@ -109,10 +109,15 @@ class SqlPromptInterpreter(
             )
         }
 
-        // 4. SHOW <table>
+        // 4. SHOW <table> or bare table name
         val showMatch = Regex("(?:show|display|list|all|select|zobraz|vsechny)\\s+(.+?)(?:\\s+table)?$").find(clean)
         if (showMatch != null) {
             val tbl = resolveTable(showMatch.groupValues[1])
+            if (tbl != null) return selectAll(tbl)
+        }
+        // Bare table name — single word that resolves to a table
+        if (clean.matches(Regex("^\\w+$"))) {
+            val tbl = resolveTable(clean)
             if (tbl != null) return selectAll(tbl)
         }
 
@@ -131,7 +136,9 @@ class SqlPromptInterpreter(
             val tbl = resolveTable(what)
             if (tbl != null) {
                 return if (condition.isNotEmpty()) {
-                    val (colSql, _) = resolveCondition(condition, tbl)
+                    val resolved = resolveCondition(condition, tbl)
+                    if (resolved == null) return Interpretation("", "I didn't understand")
+                    val (colSql, _) = resolved
                     Interpretation(
                         "SELECT COUNT(*) AS count FROM $tbl WHERE $colSql",
                         "Counting filtered rows in $tbl",
@@ -153,7 +160,9 @@ class SqlPromptInterpreter(
             val tbl = resolveTable(target)
             if (tbl != null) {
                 return if (condition.isNotEmpty()) {
-                    val (colSql, _) = resolveCondition(condition, tbl)
+                    val resolved = resolveCondition(condition, tbl)
+                    if (resolved == null) return Interpretation("", "I didn't understand")
+                    val (colSql, _) = resolved
                     Interpretation("SELECT * FROM $tbl WHERE $colSql", "Finding rows in $tbl")
                 } else selectAll(tbl)
             }
@@ -178,6 +187,9 @@ class SqlPromptInterpreter(
             }
 
             if (rawGroupBy.isNotEmpty()) {
+                if (!isKnownField(rawField) || !isKnownField(rawGroupBy)) {
+                    return Interpretation("", "I didn't understand")
+                }
                 val groupField = resolveField(rawGroupBy)
                 val aggField = resolveField(rawField)
                 val (gTable, gCol) = groupField
@@ -201,8 +213,10 @@ class SqlPromptInterpreter(
                             )
                         }
                     }
+                    // Cross-table fields with no FK — nonsense query
+                    return Interpretation("", "I didn't understand")
                 }
-
+                // Same-table aggregation
                 val alias = aTable.lowercase().first().toString()
                 return Interpretation(
                     "SELECT $alias.$gCol AS group_name, $fn($alias.$aCol) AS agg_value FROM $aTable $alias GROUP BY $alias.$gCol ORDER BY agg_value DESC",
@@ -210,10 +224,21 @@ class SqlPromptInterpreter(
                 )
             } else {
                 // Simple: min/max
+                if (!isKnownField(rawField) && rawField.split(Regex("\\s+")).none { word -> isKnownField(word) }) {
+                    return Interpretation("", "I didn't understand")
+                }
+                val textBeforeAgg = clean.substring(0, aggMatch.range.first).trim()
+                val contextTableName =
+                    textBeforeAgg.split(Regex("\\s+")).firstNotNullOfOrNull { word -> resolveTable(word) }
+
                 val tableFromField = rawField.split(Regex("\\s+")).lastOrNull { word -> resolveTable(word) != null }
                 val resolved = if (tableFromField != null) resolveField(tableFromField) else resolveField(rawField)
+                // If user specified a context table, the resolved field must belong to it
+                if (contextTableName != null && !resolved.first.equals(contextTableName, ignoreCase = true)) {
+                    return Interpretation("", "I didn't understand")
+                }
                 val table = resolved.first
-                // Use the resolved column if exact; otherwise pick a sensible numeric col
+                // Use resolved column if it's not the arbitrary first column (ID)
                 val numericCol = if (resolved.second != tableIndex[table.lowercase()]?.columns?.first()?.name) {
                     resolved.second
                 } else {
@@ -243,12 +268,14 @@ class SqlPromptInterpreter(
         }
 
         // 9. "<table> with/in <condition>" — also catches agg patterns like "product with highest stock"
-        val simpleWhereMatch = Regex("^(\\w+)\\s+(?:in|from|v|z|with|s|kde)\\s+(.+)$").find(clean)
+        val simpleWhereMatch = Regex("^(\\w+)\\s+(?:in|from|v|z|with|s|kde|where)\\s+(.+)$").find(clean)
         if (simpleWhereMatch != null) {
             val tbl = resolveTable(simpleWhereMatch.groupValues[1])
             val condition = simpleWhereMatch.groupValues[2].trim()
             if (tbl != null) {
-                val (colSql, _) = resolveCondition(condition, tbl)
+                val resolved = resolveCondition(condition, tbl)
+                if (resolved == null) return Interpretation("", "I didn't understand")
+                val (colSql, _) = resolved
                 return Interpretation("SELECT * FROM $tbl WHERE $colSql", "Finding rows in $tbl")
             }
         }
@@ -356,17 +383,28 @@ class SqlPromptInterpreter(
         return first.name to first.columns.first().name
     }
 
-    private fun resolveCondition(condition: String, table: String): Pair<String, String> {
+    private fun resolveCondition(condition: String, table: String): Pair<String, String>? {
         val clean = condition.trim().lowercase()
 
         // "field > value"
         val opMatch = Regex("^(\\w+)\\s*(>|<|>=|<=|=|!=)\\s*(.+)$").find(clean)
+        // "field value" (implicit =)
+        val bareMatch = if (opMatch == null) Regex("^(\\w+)\\s+(\\d+)$").find(clean) else null
         if (opMatch != null) {
-            val field = resolveField(opMatch.groupValues[1].trim()).second
-            val op = opMatch.groupValues[2]
+            val fieldName = opMatch.groupValues[1].trim()
+            if (!isKnownField(fieldName)) return null
+            val field = resolveField(fieldName).second
+            val op = opMatch.groupValues[2].ifEmpty { "=" }
             val value = opMatch.groupValues[3].trim()
             val sqlValue = if (value.toDoubleOrNull() != null) value else "'${value.replace("'", "''")}'"
             return "$field $op $sqlValue" to "$field $op $value"
+        }
+        if (bareMatch != null) {
+            val fieldName = bareMatch.groupValues[1].trim()
+            if (!isKnownField(fieldName)) return null
+            val field = resolveField(fieldName).second
+            val value = bareMatch.groupValues[2]
+            return "$field = $value" to "$field = $value"
         }
 
         // Known value from DB
@@ -398,6 +436,17 @@ class SqlPromptInterpreter(
         if (isMatch != null) {
             val value = isMatch.groupValues[1].trim()
             return "'${value.replace("'", "''")}' = '${value.replace("'", "''")}'" to "= '$value'"
+        }
+
+        // Fallback: single word — try text columns of the target table via LIKE
+        if (!clean.contains(" ")) {
+            val tInfo = tableIndex[table.lowercase()]
+            if (tInfo != null) {
+                val textCol = tInfo.columns.firstOrNull { isTextColumn(it.type) }
+                if (textCol != null) {
+                    return "LOWER(${textCol.name}) = '$clean'" to "$clean"
+                }
+            }
         }
 
         return "? = '${clean.replace("'", "''")}'" to clean
@@ -444,6 +493,14 @@ class SqlPromptInterpreter(
             "SELECT * FROM $t1, $t2",
             "Cross-joining $t1 and $t2 (no FK found)"
         )
+    }
+
+    /** Returns true if the name is recognized as a column, table, or synonym. */
+    private fun isKnownField(name: String): Boolean {
+        val key = name.trim().lowercase()
+        return columnIndex.containsKey(key)
+                || resolveTable(key) != null
+                || columnSynonyms.containsKey(key)
     }
 
     private fun resolveForeignKeyFromTo(

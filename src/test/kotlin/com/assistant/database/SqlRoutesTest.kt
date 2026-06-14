@@ -323,4 +323,225 @@ class SqlRoutesTest {
         assertTrue(body.contains("show tables"), "Examples should include 'show tables'")
         assertTrue(body.contains("cheapest product"), "Examples should include 'cheapest product'")
     }
+
+    @Test
+    fun `cheapest crap returns I didnt understand`() = testApp {
+        val response = client.post("/sql/query") {
+            contentType(ContentType.Application.Json)
+            setBody("""{"prompt": "cheapest crap"}""")
+        }
+        assertEquals(HttpStatusCode.OK, response.status)
+        val body = response.bodyAsText()
+        assertTrue(body.contains("didn't understand"), "Nonsense field should be rejected")
+    }
+
+    @Test
+    fun `cheapest employee returns lowest paid employee`() = testApp {
+        val response = client.post("/sql/query") {
+            contentType(ContentType.Application.Json)
+            setBody("""{"prompt": "cheapest employee"}""")
+        }
+        assertEquals(HttpStatusCode.OK, response.status)
+        val body = response.bodyAsText()
+        assertTrue(body.contains("salary", ignoreCase = true), "SQL should sort by salary")
+        assertTrue(body.contains("David Hora"), "Lowest salary employee should be 'David Hora' (51000 CZK)")
+        assertTrue(body.contains("rowCount"), "Response should contain rowCount")
+    }
+
+    @Test
+    fun `average crap by department returns I didnt understand`() = testApp {
+        val response = client.post("/sql/query") {
+            contentType(ContentType.Application.Json)
+            setBody("""{"prompt": "average crap by department"}""")
+        }
+        assertEquals(HttpStatusCode.OK, response.status)
+        val body = response.bodyAsText()
+        assertTrue(body.contains("didn't understand"), "Nonsense field should be rejected")
+    }
+
+    @Test
+    fun `average price by category returns aggregation`() = testApp {
+        val response = client.post("/sql/query") {
+            contentType(ContentType.Application.Json)
+            setBody("""{"prompt": "average price by category"}""")
+        }
+        assertEquals(HttpStatusCode.OK, response.status)
+        val body = response.bodyAsText()
+        assertTrue(body.contains("AVG", ignoreCase = true), "SQL should use AVG")
+        assertTrue(body.contains("group_name", ignoreCase = true), "Result should have group_name column")
+        assertTrue(body.contains("agg_value", ignoreCase = true), "Result should have agg_value column")
+        assertTrue(body.contains("rowCount"), "Response should contain rowCount")
+    }
+
+    @Test
+    fun `product with id 1 returns matching product`() = testApp {
+        val response = client.post("/sql/query") {
+            contentType(ContentType.Application.Json)
+            setBody("""{"prompt": "product with id 1"}""")
+        }
+        assertEquals(HttpStatusCode.OK, response.status)
+        val body = response.bodyAsText()
+        assertTrue(body.contains("WHERE", ignoreCase = true), "SQL should have WHERE clause")
+        assertTrue(body.contains("ID", ignoreCase = true), "SQL should filter by ID")
+        assertTrue(body.contains("Model X") || body.contains("Laptop"), "Should return product with id 1")
+        assertTrue(body.contains("rowCount"), "Response should contain rowCount")
+    }
+
+    @Test
+    fun `product with crap greater than 1 returns I didnt understand`() = testApp {
+        val response = client.post("/sql/query") {
+            contentType(ContentType.Application.Json)
+            setBody("""{"prompt": "product with crap > 1"}""")
+        }
+        assertEquals(HttpStatusCode.OK, response.status)
+        val body = response.bodyAsText()
+        assertTrue(body.contains("didn't understand"), "Nonsense field should be rejected")
+    }
+
+    @Test
+    fun `product with stock 7 returns product with stock 7`() = testApp {
+        val response = client.post("/sql/query") {
+            contentType(ContentType.Application.Json)
+            setBody("""{"prompt": "product with stock 7"}""")
+        }
+        assertEquals(HttpStatusCode.OK, response.status)
+        val body = response.bodyAsText()
+        assertTrue(body.contains("STOCK = 7", ignoreCase = true), "SQL should filter stock = 7")
+        assertTrue(body.contains("rowCount"), "Response should contain rowCount")
+    }
+
+    @Test
+    fun `product where price greater than 1000 returns filtered products`() = testApp {
+        val response = client.post("/sql/query") {
+            contentType(ContentType.Application.Json)
+            setBody("""{"prompt": "product where price > 1000"}""")
+        }
+        assertEquals(HttpStatusCode.OK, response.status)
+        val body = response.bodyAsText()
+        assertTrue(body.contains("PRICE > 1000", ignoreCase = true), "SQL should filter PRICE > 1000")
+        assertTrue(body.contains("Laptop Pro X1"), "Should include expensive products")
+        assertTrue(body.contains("rowCount"), "Response should contain rowCount")
+    }
+
+    @Test
+    fun `bare table name employees returns all employees`() = testApp {
+        val response = client.post("/sql/query") {
+            contentType(ContentType.Application.Json)
+            setBody("""{"prompt": "employees"}""")
+        }
+        assertEquals(HttpStatusCode.OK, response.status)
+        val body = response.bodyAsText()
+        assertTrue(body.contains("Jan Novak"), "Should return all employees")
+        assertTrue(body.contains("rowCount"), "Response should contain rowCount")
+    }
+
+    @Test
+    fun `highest price returns most expensive product`() = testApp {
+        val response = client.post("/sql/query") {
+            contentType(ContentType.Application.Json)
+            setBody("""{"prompt": "highest price"}""")
+        }
+        assertEquals(HttpStatusCode.OK, response.status)
+        val body = response.bodyAsText()
+        assertTrue(body.contains("price", ignoreCase = true), "SQL should sort by price DESC")
+        assertTrue(body.contains("Laptop Pro X1"), "Highest price should be 'Laptop Pro X1'")
+    }
+
+    @Test
+    fun `join departments and products returns I didnt understand because no FK`() = testApp {
+        val response = client.post("/sql/query") {
+            contentType(ContentType.Application.Json)
+            setBody("""{"prompt": "join departments and products"}""")
+        }
+        assertEquals(HttpStatusCode.OK, response.status)
+        val body = response.bodyAsText()
+        println(body)
+        assertTrue(body.contains("Cross-joining DEPARTMENTS and PRODUCTS (no FK found)"), "No FK between departments and products should fail")
+    }
+
+    @Test
+    fun `count products with price greater than 1000 returns count`() = testApp {
+        val response = client.post("/sql/query") {
+            contentType(ContentType.Application.Json)
+            setBody("""{"prompt": "count products in price > 1000"}""")
+        }
+        assertEquals(HttpStatusCode.OK, response.status)
+        val body = response.bodyAsText()
+        assertTrue(body.contains("COUNT", ignoreCase = true), "SQL should use COUNT")
+        assertTrue(body.contains("WHERE", ignoreCase = true), "SQL should have WHERE clause")
+        assertTrue(body.contains("price", ignoreCase = true), "SQL should filter by price")
+    }
+
+    @Test
+    fun `find employees with where conjunction works`() = testApp {
+        val response = client.post("/sql/query") {
+            contentType(ContentType.Application.Json)
+            setBody("""{"prompt": "find employees where department_id = 1"}""")
+        }
+        assertEquals(HttpStatusCode.OK, response.status)
+        val body = response.bodyAsText()
+        assertTrue(body.contains("DEPARTMENT_ID = 1", ignoreCase = true), "SQL should filter DEPARTMENT_ID = 1")
+        assertTrue(body.contains("Jan Novak"), "Should include Engineering employees")
+    }
+
+    @Test
+    fun `min price returns cheapest product`() = testApp {
+        val response = client.post("/sql/query") {
+            contentType(ContentType.Application.Json)
+            setBody("""{"prompt": "min price"}""")
+        }
+        assertEquals(HttpStatusCode.OK, response.status)
+        val body = response.bodyAsText()
+        assertTrue(body.contains("price", ignoreCase = true), "SQL should sort by price ASC")
+        assertTrue(body.contains("Water Bottle 1L"), "Min price should be 'Water Bottle 1L' (399 CZK)")
+    }
+
+    @Test
+    fun `employee with lowest stock returns I didnt understand because stock not in employees`() = testApp {
+        val response = client.post("/sql/query") {
+            contentType(ContentType.Application.Json)
+            setBody("""{"prompt": "employee with lowest stock"}""")
+        }
+        assertEquals(HttpStatusCode.OK, response.status)
+        val body = response.bodyAsText()
+        assertTrue(body.contains("didn't understand"), "stock not in employees should be rejected")
+    }
+
+    @Test
+    fun `average salary by department via czech prumer`() = testApp {
+        val response = client.post("/sql/query") {
+            contentType(ContentType.Application.Json)
+            setBody("""{"prompt": "prumer salary by department"}""")
+        }
+        assertEquals(HttpStatusCode.OK, response.status)
+        val body = response.bodyAsText()
+        assertTrue(body.contains("AVG", ignoreCase = true), "SQL should use AVG")
+        assertTrue(body.contains("group_name", ignoreCase = true), "Result should have group_name")
+        assertTrue(body.contains("Engineering"), "Should contain Engineering department")
+    }
+
+    @Test
+    fun `most expensive employee returns highest paid employee`() = testApp {
+        val response = client.post("/sql/query") {
+            contentType(ContentType.Application.Json)
+            setBody("""{"prompt": "most expensive employee"}""")
+        }
+        assertEquals(HttpStatusCode.OK, response.status)
+        val body = response.bodyAsText()
+        assertTrue(body.contains("salary", ignoreCase = true), "SQL should sort by salary DESC")
+        assertTrue(body.contains("Lucie Kralova"), "Highest salary should be 'Lucie Kralova' (105000 CZK)")
+    }
+
+    @Test
+    fun `raw SQL with semicolon ignored`() = testApp {
+        val response = client.post("/sql/query") {
+            contentType(ContentType.Application.Json)
+            setBody("""{"prompt": "select * from products where stock < 10"}""")
+        }
+        assertEquals(HttpStatusCode.OK, response.status)
+        val body = response.bodyAsText()
+        assertTrue(body.contains("stock", ignoreCase = true), "Result should contain stock column")
+        assertTrue(body.contains("Standing Desk"), "Should include low stock products")
+        assertTrue(body.contains("rowCount"), "Response should contain rowCount")
+    }
 }
