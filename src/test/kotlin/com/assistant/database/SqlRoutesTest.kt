@@ -456,7 +456,10 @@ class SqlRoutesTest {
         assertEquals(HttpStatusCode.OK, response.status)
         val body = response.bodyAsText()
         println(body)
-        assertTrue(body.contains("Cross-joining DEPARTMENTS and PRODUCTS (no FK found)"), "No FK between departments and products should fail")
+        assertTrue(
+            body.contains("Cross-joining DEPARTMENTS and PRODUCTS (no FK found)"),
+            "No FK between departments and products should fail"
+        )
     }
 
     @Test
@@ -470,6 +473,30 @@ class SqlRoutesTest {
         assertTrue(body.contains("COUNT", ignoreCase = true), "SQL should use COUNT")
         assertTrue(body.contains("WHERE", ignoreCase = true), "SQL should have WHERE clause")
         assertTrue(body.contains("price", ignoreCase = true), "SQL should filter by price")
+    }
+
+    @Test
+    fun `products in category Electronics returns filtered products`() = testApp {
+        val response = client.post("/sql/query") {
+            contentType(ContentType.Application.Json)
+            setBody("""{"prompt": "products with category Electronics"}""")
+        }
+        assertEquals(HttpStatusCode.OK, response.status)
+        val body = response.bodyAsText()
+        assertTrue(body.contains("LOWER(CATEGORY) = 'electronics'", ignoreCase = true), "SQL should filter CATEGORY")
+        assertTrue(body.contains("Laptop Pro X1"), "Should include Electronics products")
+        assertTrue(body.contains("rowCount"), "Response should contain rowCount")
+    }
+
+    @Test
+    fun `nonsense bare condition rejected`() = testApp {
+        val response = client.post("/sql/query") {
+            contentType(ContentType.Application.Json)
+            setBody("""{"prompt": "foo > 5"}""")
+        }
+        assertEquals(HttpStatusCode.OK, response.status)
+        val body = response.bodyAsText()
+        assertTrue(body.contains("didn't understand"), "Unknown field in bare condition should be rejected")
     }
 
     @Test
