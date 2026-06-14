@@ -1,7 +1,6 @@
 package com.assistant.memory
 
 import com.assistant.model.ClassificationResult
-import com.assistant.model.IntentLabel
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 

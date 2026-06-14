@@ -24,7 +24,7 @@ class SimpleTokenizer {
             "night", "exit", "quit", "end", "stop",
 
             // Name-related
-            "name", "your", "whats", "what", "is", "jmenujes", "jmenuji", "kdo", "jsi",
+            "name", "your", "whats", "what", "is", "jmenujes", "jmeno", "kdo", "jsi",
             "are", "you", "call", "yourself",
 
             // Capabilities
@@ -62,6 +62,10 @@ class SimpleTokenizer {
             // Sentiment words
             "happy", "sad", "angry", "tired", "bored", "confused", "lost",
             "stastny", "smutny", "unaveny", "ztraceny",
+
+            // SQL
+            "sql", "select", "show", "data", "databaze", "dotaz", "join", "count",
+            "group", "sum", "total", "prumer",
 
             // PAD token
             "[PAD]", "[UNK]"

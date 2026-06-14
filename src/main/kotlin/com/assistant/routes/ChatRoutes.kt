@@ -57,7 +57,7 @@ fun Route.chatRoutes(model: TinyNeuralNetwork, tokenizer: SimpleTokenizer) {
 
         // Check for follow-up context
         val lastIntent = memory.getLastIntent(sessionId)
-        val isFollowUp = memory.isFollowUp(sessionId, message)
+        val isFollowUp = memory.isFollowUp(sessionId, message) && !message.contains("sql")
 
         log.debug(">>> [{}] CONTEXT: isFollowUp={} lastIntent={}", sessionId, isFollowUp, lastIntent)
 
@@ -73,7 +73,7 @@ fun Route.chatRoutes(model: TinyNeuralNetwork, tokenizer: SimpleTokenizer) {
                 classification.intent.response
             }
         } else {
-            classification.intent.response
+            classification.intent.emotion + " " + classification.intent.response
         }
 
         // Add confidence feedback for low-confidence results
