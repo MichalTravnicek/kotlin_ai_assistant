@@ -91,7 +91,7 @@ fun Route.chatRoutes(model: TinyNeuralNetwork, tokenizer: SimpleTokenizer) {
 
         log.info("<<< [{}] RESPONSE: intent='{}' confidence={} historySize={} reply='{}'",
             sessionId, classification.intent.id, "%.2f".format(classification.confidence), historyCount,
-            finalResponse.take(80).replace("\n", "\\n"))
+            finalResponse.replace("\n", "\\n"))
 
         // Response
         call.respond(

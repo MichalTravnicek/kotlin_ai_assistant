@@ -18,261 +18,216 @@ class SqlPromptInterpreter(
     private val valueQuery: (String, String) -> List<String>
 ) {
     data class Interpretation(val sql: String, val explanation: String)
+    private data class JoinInfo(val groupExpr: String, val fromClause: String, val groupLabel: String)
+    private data class FieldRef(val table: String, val column: String)
+    private data class Cond(val sql: String, val label: String)
 
     private val schema: List<DatabaseManager.TableInfo> by lazy { schemaProvider() }
-
-    private val tableIndex: Map<String, DatabaseManager.TableInfo> by lazy {
-        schema.associateBy { it.name.lowercase() }
-    }
-
-    private val columnIndex: Map<String, List<Pair<String, String>>> by lazy {
-        schema.flatMap { t -> t.columns.map { c -> c.name.lowercase() to (t.name to c.name) } }
+    private val tableIndex: Map<String, DatabaseManager.TableInfo> by lazy { schema.associateBy { it.name.lowercase() } }
+    private val columnIndex: Map<String, List<FieldRef>> by lazy {
+        schema.flatMap { t -> t.columns.map { c -> c.name.lowercase() to FieldRef(t.name, c.name) } }
             .groupBy({ it.first }) { it.second }
     }
-
     private val columnSynonyms: Map<String, String> by lazy { buildColumnSynonyms() }
-
-    private val knownValues: Map<String, List<Pair<String, String>>> by lazy {
+    private val knownValues: Map<String, List<FieldRef>> by lazy {
         schema.flatMap { t ->
             t.columns.filter { isText(it.type) }.flatMap { c ->
-                valueQuery(t.name, c.name).map { it.lowercase().trim() to (t.name to c.name) }
+                valueQuery(t.name, c.name).map { it.lowercase().trim() to FieldRef(t.name, c.name) }
             }
         }.groupBy({ it.first }) { it.second }
     }
 
+    /** Lookup a table by any casing. */
+    private fun tableInfo(name: String) = tableIndex[name.trim().lowercase()]
+
+    /** Entry point: try sub-interpreters in priority order, fall back to DUNNO. */
     fun interpret(prompt: String): Interpretation {
         val clean = prompt.trim().lowercase().replace(RE_WS, " ")
-
         if (clean.startsWith("select")) return Interpretation(prompt, "Raw SQL passthrough")
         if (clean in SHOW_TABLES) return Interpretation("SHOW TABLES", "Showing all available tables")
-        if (clean in HELP_WORDS) return Interpretation(
-            "",
-            "Available tables: ${schema.joinToString(", ") { it.name }}. Try: show <table>, find <table> with <condition>"
-        )
-
-        show(clean)?.let { return it }
-        if (clean.matches(RE_BARE_WORD)) bareTable(clean)?.let { return it }
-        describe(clean)?.let { return it }
-        tableCond(clean, RE_COUNT, "COUNT(*) AS count")?.let { return it }
-        tableCond(clean, RE_FIND, "*")?.let { return it }
-        aggregation(clean)?.let { return it }
-        tableWhere(clean)?.let { return it }
-        join(clean)?.let { return it }
-        bareCondition(clean)?.let { return it }
-
-        return DUNNO
+        if (clean in HELP_WORDS) return Interpretation("",
+            "Available tables: ${schema.joinToString(", ") { it.name }}. Try: show <table>, find <table> with <condition>")
+        return show(clean) ?: bareTable(clean) ?: describe(clean)
+            ?: tableCond(clean, RE_COUNT, "COUNT(*) AS count")
+            ?: tableCond(clean, RE_FIND, "*")
+            ?: aggregation(clean)
+            ?: tableCond(clean, RE_TABLE_WHERE, "*")
+            ?: join(clean) ?: bareCondition(clean) ?: DUNNO
     }
 
-    // ---------- Sub-interpreters (return null = no match) ----------
+    // ---------- Sub-interpreters, chain helpers (non-null = matched) ----------
 
-    private fun show(clean: String): Interpretation? = matchResolve(RE_SHOW, clean) { selectAll(it) }
+    /** Match "show|display|list <table>" → SELECT *. */
+    private fun show(clean: String) = matchResolve(RE_SHOW, clean) { selectAll(it) }
 
-    private fun bareTable(clean: String): Interpretation? = resolveTable(clean)?.let { selectAll(it) }
+    /** Match bare table name → SELECT *. */
+    private fun bareTable(clean: String) = resolveTable(clean)?.let { selectAll(it) }
 
-    private fun describe(clean: String): Interpretation? = matchResolve(RE_DESC, clean) { describeTable(it) }
+    /** Match "describe|structure <table>" → INFORMATION_SCHEMA query. */
+    private fun describe(clean: String) = matchResolve(RE_DESC, clean) { describeTable(it) }
 
-    /** COUNT / FIND pattern: resolve table, optionally apply a condition. */
-    private fun tableCond(clean: String, re: Regex, selectExpr: String): Interpretation? {
-        re.find(clean)?.let { m ->
-            val tbl = resolveTable(m.groupValues[1]) ?: return@let null
-            val cond = m.groupValues[2].trim()
-            return if (cond.isNotEmpty()) condSql(cond, tbl)?.let { sql ->
-                Interpretation("SELECT $selectExpr FROM $tbl WHERE $sql", "Finding rows in $tbl")
-            } ?: DUNNO else selectAll(tbl)
+    /** Match "count/find <thing> [in/with <condition>]" → filtered SELECT or COUNT. */
+    private fun tableCond(clean: String, re: Regex, selectExpr: String): Interpretation? = re.find(clean)?.let { m ->
+        val tbl = resolveTable(m.groupValues[1]) ?: return@let null
+        val cond = m.groupValues[2].trim()
+        if (cond.isNotEmpty()) return condSql(cond, tbl)?.let { sql ->
+            Interpretation("SELECT $selectExpr FROM $tbl WHERE $sql", "Finding rows in $tbl")
+        } ?: DUNNO
+        if (selectExpr != "*") return Interpretation("SELECT $selectExpr FROM $tbl", "Counting rows in $tbl")
+        selectAll(tbl)
+    }
+
+    /** Match "min/max/avg/sum <field> [by <group>]" → ORDER BY LIMIT 1 or grouped aggregation. */
+    private fun aggregation(clean: String): Interpretation? = RE_AGG.find(clean)?.let { m ->
+        val aggWord = m.groupValues[1].lowercase()
+        val rawField = m.groupValues[2].trim()
+        val rawGroupBy = m.groupValues[3].trim()
+        val fn = AGG_MAP[aggWord] ?: "AVG"
+
+        if (rawGroupBy.isNotEmpty()) {
+            if (!isKnownField(rawField) || !isKnownField(rawGroupBy)) return DUNNO
+            return aggGrouped(rawGroupBy, rawField, fn, aggWord)
         }
-        return null
+
+        if (!isKnownField(rawField) && rawField.split(RE_WS).none { isKnownField(it) }) return DUNNO
+        val resolved = resolveFieldFrom(rawField, m, clean) ?: return DUNNO
+        val order = if (aggWord in ASC_WORDS) "ASC" else "DESC"
+        Interpretation("SELECT * FROM ${resolved.table} ORDER BY ${resolved.column} $order LIMIT 1",
+            "Finding row with ${if (order == "ASC") "lowest" else "highest"} ${resolved.column}")
     }
 
-    private fun aggregation(clean: String): Interpretation? {
-        RE_AGG.find(clean)?.let { m ->
-            val aggWord = m.groupValues[1].lowercase()
-            val rawField = m.groupValues[2].trim()
-            val rawGroupBy = m.groupValues[3].trim()
-            val fn = AGG_MAP[aggWord] ?: "AVG"
+    /** When the agg field might be prefixed by a table name ("product with lowest stock"), peel it off. */
+    private fun resolveFieldFrom(rawField: String, m: MatchResult, clean: String): FieldRef? {
+        val contextTable = clean.substring(0, m.range.first).trim()
+            .split(RE_WS).firstNotNullOfOrNull { resolveTable(it) }
+        val resolved = rawField.split(RE_WS).lastOrNull { resolveTable(it) != null }
+            ?.let { resolveField(it) } ?: resolveField(rawField) ?: return null
+        if (contextTable != null && !resolved.table.equals(contextTable, ignoreCase = true)) return null
+        return resolved
+    }
 
-            if (rawGroupBy.isNotEmpty()) {
-                if (!isKnownField(rawField) || !isKnownField(rawGroupBy)) return DUNNO
-                return aggGrouped(rawGroupBy, rawField, fn, aggWord)
+    /** Build a grouped aggregation SQL — handles same-table and cross-table via FK join. Returns null = not understood. */
+    private fun aggGrouped(groupBy: String, field: String, fn: String, aggWord: String): Interpretation? {
+        val g = resolveField(groupBy) ?: return null; val a = resolveField(field) ?: return null
+        val aAlias = a.table.take(1).lowercase()
+        val info = if (g.table.equals(a.table, ignoreCase = true)) JoinInfo("$aAlias.${g.column}", "FROM ${a.table} $aAlias", g.column)
+        else resolveJoinableGroup(g.table, a.table, aAlias) ?: return null
+        val alias = "${fn}_${a.column}"
+        return Interpretation("SELECT ${info.groupExpr} AS group_name, CAST($fn($aAlias.${a.column}) AS INT) AS $alias ${info.fromClause} GROUP BY ${info.groupExpr} ORDER BY $alias DESC",
+            "${aggWord.replaceFirstChar(Char::titlecase)} ${a.column} grouped by ${info.groupLabel}")
+    }
+
+    /** Build group expression/from-clause/label for cross-table aggregation. Returns null if tables can't be joined. */
+    private fun resolveJoinableGroup(gTable: String, aTable: String, aAlias: String): JoinInfo? =
+        tableInfo(gTable)?.let { gInfo -> tableInfo(aTable)?.let { aInfo ->
+            resolveForeignKeyFromTo(aInfo, gInfo)?.let { (fkCol, refCol) ->
+                val gCol = gInfo.columns.firstOrNull { isText(it.type) }?.name ?: refCol
+                JoinInfo("$gTable.$gCol", "FROM $aTable $aAlias JOIN $gTable ON $aAlias.$fkCol = $gTable.$refCol", "$gTable.$gCol")
             }
+        } }
 
-            if (!isKnownField(rawField) && rawField.split(RE_WS).none { isKnownField(it) }) return DUNNO
-            val contextTable = clean.substring(0, m.range.first).trim()
-                .split(RE_WS).firstNotNullOfOrNull { resolveTable(it) }
-            val resolved = rawField.split(RE_WS).lastOrNull { resolveTable(it) != null }
-                ?.let { resolveField(it) } ?: resolveField(rawField) ?: return DUNNO
-            if (contextTable != null && !resolved.first.equals(contextTable, ignoreCase = true)) return DUNNO
-
-            val col = resolved.second
-            val order = if (aggWord in ASC_WORDS) "ASC" else "DESC"
-            return Interpretation(
-                "SELECT * FROM ${resolved.first} ORDER BY $col $order LIMIT 1",
-                "Finding row with ${if (order == "ASC") "lowest" else "highest"} $col"
-            )
-        }
-        return null
+    /** Match "join <t1> and <t2>" → JOIN via FK or cross-join. */
+    private fun join(clean: String): Interpretation? = RE_JOIN.find(clean)?.let { m ->
+        resolveTable(m.groupValues[1])?.let { t1 -> resolveTable(m.groupValues[2])?.let { t2 -> buildJoin(t1, t2) } }
     }
 
-    private fun aggGrouped(groupBy: String, field: String, fn: String, aggWord: String): Interpretation {
-        val (gTable, gCol) = resolveField(groupBy) ?: return DUNNO
-        val (aTable, aCol) = resolveField(field) ?: return DUNNO
-
-        val (groupExpr, fromClause, groupLabel) = if (gTable.equals(aTable, ignoreCase = true)) {
-            val alias = aTable.lowercase().first().toString()
-            Triple("$alias.$gCol", "FROM $aTable $alias", gCol)
-        } else {
-            val gInfo = tableIndex[gTable.lowercase()] ?: return DUNNO
-            val aInfo = tableIndex[aTable.lowercase()] ?: return DUNNO
-            val (fkCol, refCol) = resolveForeignKeyFromTo(aInfo, gInfo) ?: return DUNNO
-            val displayCol = gInfo.columns.firstOrNull { isText(it.type) }?.name ?: refCol
-            val alias = aTable.lowercase().first().toString()
-            Triple(
-                "$gTable.$displayCol",
-                "FROM $aTable $alias JOIN $gTable ON $alias.$fkCol = $gTable.$refCol",
-                "$gTable.$displayCol"
-            )
-        }
-        val aAlias = aTable.lowercase().first().toString()
-        return Interpretation(
-            "SELECT $groupExpr AS group_name, $fn($aAlias.$aCol) AS agg_value $fromClause GROUP BY $groupExpr ORDER BY agg_value DESC",
-            "${aggWord.replaceFirstChar { it.uppercase() }} $aCol grouped by $groupLabel"
-        )
-    }
-
-    private fun tableWhere(clean: String): Interpretation? {
-        RE_TABLE_WHERE.find(clean)?.let { m ->
-            val tbl = resolveTable(m.groupValues[1]) ?: return@let null
-            return condSql(m.groupValues[2], tbl)?.let {
-                Interpretation("SELECT * FROM $tbl WHERE $it", "Finding rows in $tbl")
-            } ?: DUNNO
-        }
-        return null
-    }
-
-    private fun join(clean: String): Interpretation? {
-        RE_JOIN.find(clean)?.let { m ->
-            val t1 = resolveTable(m.groupValues[1])
-            val t2 = resolveTable(m.groupValues[2])
-            if (t1 != null && t2 != null) return buildJoin(t1, t2)
-        }
-        return null
-    }
-
-    private fun bareCondition(clean: String): Interpretation? {
-        RE_BARE_COND.find(clean)?.let { m ->
-            val (table, resolvedCol) = resolveField(m.groupValues[1]) ?: return null
-            val op = m.groupValues[2]
-            val value = m.groupValues[3].trim()
-            val sqlOp = when (op) {
-                "equals", "is" -> "="; "like" -> "LIKE"; else -> op
-            }
+    /** Match "<field> <op> <value>" with English operators (equals/is/like). */
+    private fun bareCondition(clean: String): Interpretation? = RE_BARE_COND.find(clean)?.let { m ->
+        resolveField(m.groupValues[1])?.let { (table, col) ->
+            val op = m.groupValues[2]; val value = m.groupValues[3].trim()
+            val sqlOp = when (op) { "equals", "is" -> "="; "like" -> "LIKE"; else -> op }
             val sqlVal = quoteVal(value)
-            val col = if (isQuoted(sqlVal)) "LOWER($resolvedCol)" else resolvedCol
-            return Interpretation(
-                "SELECT * FROM $table WHERE $col $sqlOp $sqlVal",
-                "Finding rows where $resolvedCol $op $value"
-            )
+            Interpretation("SELECT * FROM $table WHERE ${cmpField(col, sqlVal)} $sqlOp $sqlVal",
+                "Finding rows where $col $op $value")
         }
-        return null
     }
 
-    // ---------- Helpers ----------
+    // --- SQL builders ---
 
+    /** SELECT * FROM <table>. */
     private fun selectAll(table: String) = Interpretation("SELECT * FROM $table", "Selecting all rows from $table")
 
+    /** INFORMATION_SCHEMA query for table structure. */
     private fun describeTable(table: String) = Interpretation(
         "SELECT COLUMN_NAME AS column, DATA_TYPE AS type FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = '$table'",
-        "Showing structure of $table"
-    )
+        "Showing structure of $table")
 
-    /** Shorthand: match regex that captures a table name, resolve, then map. */
-    private fun matchResolve(re: Regex, input: String, f: (String) -> Interpretation): Interpretation? {
-        re.find(input)?.let { m -> resolveTable(m.groupValues[1])?.let { return f(it) } }
-        return null
-    }
+    // --- Resolvers ---
 
-    private fun condSql(condition: String, table: String): String? = resolveCondition(condition, table)?.first
+    /** Match a regex capturing a table name, resolve it, then map to Interpretation. */
+    private fun matchResolve(re: Regex, input: String, f: (String) -> Interpretation) =
+        re.find(input)?.let { m -> resolveTable(m.groupValues[1])?.let { f(it) } }
 
-    /** Like resolveField but returns only the column name, null if unknown. */
-    private fun resolveColumn(name: String): String? {
-        return if (isKnownField(name)) resolveField(name)?.second else null
-    }
+    /** Resolve a condition string to its SQL WHERE clause, or null. */
+    private fun condSql(condition: String, table: String) = resolveCondition(condition, table)?.sql
 
+    /** Resolve a column name to a canonical column name, or null if unknown. */
+    private fun resolveColumn(name: String) = if (isKnownField(name)) resolveField(name)?.column else null
+
+    /** Resolve a table name (with singular/plural inflection) to canonical name, or null. */
     private fun resolveTable(name: String): String? {
         val key = name.trim().lowercase()
-        tableIndex[key]?.let { return it.name }
-        (tableIndex["${key}s"])?.let { return it.name }
-        val singular = key.removeSuffix("es").removeSuffix("s")
-        if (singular != key) tableIndex[singular]?.let { return it.name }
-        if (key.endsWith("ies")) tableIndex[key.removeSuffix("ies") + "y"]?.let { return it.name }
-        return null
+        return tableInfo(key)?.name ?: tableInfo("${key}s")?.name ?: run {
+            val singular = key.removeSuffix("es").removeSuffix("s")
+            val alt = if (key.endsWith("ies")) key.removeSuffix("ies") + "y" else null
+            (if (singular != key) tableInfo(singular)?.name else null) ?: alt?.let { tableInfo(it)?.name }
+        }
     }
 
-    /** Resolve a field name to (canonicalTable, canonicalColumn), or null if unknown. */
-    private fun resolveField(name: String): Pair<String, String>? {
+    /** Resolve "field" → (canonicalTable, canonicalColumn) by exact match, table→numeric-col, synonym, or prefix match. */
+    private fun resolveField(name: String): FieldRef? {
         val key = name.trim().lowercase()
-        for (table in schema) for (col in table.columns) {
-            if (col.name.lowercase() == key) return table.name to col.name
-        }
-        resolveTable(key)?.let { tableName ->
-            val info = tableIndex[tableName.lowercase()]!!
-            val numCol = info.columns.filter { isNum(it.type) }
-                .firstOrNull { !it.name.equals("id", ignoreCase = true) && !it.name.lowercase().endsWith("_id") }
-                ?: info.columns.firstOrNull { isNum(it.type) }
-            return info.name to (numCol?.name ?: info.columns.first().name)
-        }
-        columnSynonyms[key]?.let { colName ->
-            for (table in schema) for (col in table.columns) {
-                if (col.name == colName) return table.name to col.name
-            }
-        }
-        columnIndex.entries.firstOrNull { (cn, _) -> cn.startsWith(key) || key.startsWith(cn) }
-            ?.let { return it.value.first() }
-        return null
+        columnIndex[key]?.let { return it.first() }
+        resolveTable(key)?.let { t -> return pickNumericCol(t) }
+        columnSynonyms[key]?.let { colName -> columnIndex[colName.lowercase()]?.let { return it.first() } }
+        return columnIndex.entries.firstOrNull { (cn, _) -> cn.startsWith(key) || key.startsWith(cn) }?.value?.first()
     }
 
-    /** Parse a condition, returning (sqlClause, displayText) or null if not understood. */
-    private fun resolveCondition(condition: String, table: String): Pair<String, String>? {
+    /** When a table name is given as field, pick its best numeric column. */
+    private fun pickNumericCol(tableName: String): FieldRef {
+        val info = tableInfo(tableName)!!
+        val num = info.columns.filter { isNum(it.type) }
+            .firstOrNull { !it.name.equals("id", ignoreCase = true) && !it.name.lowercase().endsWith("_id") }
+            ?: info.columns.firstOrNull { isNum(it.type) }
+        return FieldRef(info.name, num?.name ?: info.columns.first().name)
+    }
+
+    /**
+     * Parse a condition into (sqlClause, displayText), or null if not understood.
+     * Tries: explicit operator, implicit equals, known value (with FK subquery), then bare text fallback.
+     */
+    private fun resolveCondition(condition: String, table: String): Cond? {
         val clean = condition.trim().lowercase()
+        fun condFieldValue(field: String, value: String, op: String = "=") =
+            resolveColumn(field.trim())?.let { col -> Cond("${cmpField(col, quoteVal(value.trim()))} $op ${quoteVal(value.trim())}", "$col $op $value") }
 
-        // "field op value" or "field value" (implicit =)
-        val opMatch = RE_OP.find(clean)
-        if (opMatch != null) {
-            val field = resolveColumn(opMatch.groupValues[1].trim()) ?: return null
-            val op = opMatch.groupValues[2]
-            val value = opMatch.groupValues[3].trim()
-            val sqlVal = quoteVal(value)
-            return "${cmpField(field, sqlVal)} $op $sqlVal" to "$field $op $value"
-        }
-        RE_BARE_EQ_OR_TEXT.find(clean)?.let { m ->
-            val field = resolveColumn(m.groupValues[1].trim()) ?: return null
-            val value = m.groupValues[2].trim()
-            val sqlVal = quoteVal(value)
-            return "${cmpField(field, sqlVal)} = $sqlVal" to "$field = $value"
-        }
+        RE_OP.find(clean)?.let { return condFieldValue(it.groupValues[1], it.groupValues[3], it.groupValues[2]) }
+        RE_BARE_EQ_OR_TEXT.find(clean)?.let { return condFieldValue(it.groupValues[1], it.groupValues[2]) }
 
-        knownValues[clean]?.let { known ->
-            val (tbl, col) = known.firstOrNull { it.first.equals(table, ignoreCase = true) } ?: known.first()
-            if (!tbl.equals(table, ignoreCase = true)) {
-                resolveForeignKeyFromTo(
-                    tableIndex[table.lowercase()] ?: return null,
-                    tableIndex[tbl.lowercase()] ?: return null
-                )?.let { (fkCol, refCol) ->
-                    return "$fkCol = (SELECT $refCol FROM $tbl WHERE LOWER($col) = '$clean')" to "$col = '$clean'"
-                }
-            }
-            resolveForeignKey(tbl, col)?.let { (refTable, refCol, fkCol) ->
-                return "$fkCol = (SELECT $refCol FROM $refTable WHERE LOWER($refCol) = '$clean')" to "$col = '$clean'"
-            }
-            return "$col = '${clean.replace("'", "''")}'" to "$col = '$clean'"
-        }
-
-        if (!clean.contains(" ")) {
-            tableIndex[table.lowercase()]?.columns?.firstOrNull { isText(it.type) }
-                ?.let { return "LOWER(${it.name}) = '$clean'" to clean }
-        }
-        return null
+        /**
+         * Build a condition SQL from a known value entry.
+         * Handles cross-table FK subquery, self-referencing FK, and plain column equality.
+         */
+        return knownValues[clean]?.let { known ->
+            val (tbl, col) = known.firstOrNull { it.table == table.lowercase() } ?: known.first()
+            val display = "$col = '$clean'"
+            if (tbl != table.lowercase()) {
+                tableInfo(table)?.let { t -> tableInfo(tbl)?.let { resolveForeignKeyFromTo(t, it) } }
+                    ?.let { (fk, ref) -> Cond("$fk = (SELECT $ref FROM $tbl WHERE LOWER($col) = '$clean')", display) }
+            } else resolveForeignKey(tbl, col)?.let { (refTable, refCol, fkCol) ->
+                Cond("$fkCol = (SELECT $refCol FROM $refTable WHERE LOWER($refCol) = '$clean')", display)
+            } ?: Cond("$col = '${clean.replace("'", "''")}'", display)
+        } ?: resolveBareWord(clean, table)
     }
 
+    /** Single-word condition fallback: match any text column in the table. */
+    private fun resolveBareWord(clean: String, table: String): Cond? {
+        if (clean.contains(" ")) return null
+        return tableInfo(table)?.columns?.firstOrNull { isText(it.type) }
+            ?.let { Cond("LOWER(${it.name}) = '$clean'", clean) }
+    }
+
+    /** Resolve a column ending in _id → (referencedTable, referencedIdCol, fkCol). */
     private fun resolveForeignKey(table: String, column: String): Triple<String, String, String>? {
         val lower = column.lowercase()
         val refName = when {
@@ -280,58 +235,45 @@ class SqlPromptInterpreter(
             lower.endsWith("id") && lower.length > 2 -> lower.removeSuffix("id")
             else -> return null
         }
-        val refTable = tableIndex[refName] ?: tableIndex["${refName}s"] ?: return null
-        val idCol = refTable.columns.firstOrNull { it.name.lowercase() == "id" } ?: refTable.columns.first()
-        return Triple(refTable.name, idCol.name, column)
+        return (tableInfo(refName) ?: tableInfo("${refName}s"))?.let { refTable ->
+            val idCol = refTable.columns.firstOrNull { it.name.lowercase() == "id" } ?: refTable.columns.first()
+            Triple(refTable.name, idCol.name, column)
+        }
     }
 
-    private fun buildJoin(t1: String, t2: String): Interpretation? {
-        val t1Info = tableIndex[t1.lowercase()] ?: return null
-        val t2Info = tableIndex[t2.lowercase()] ?: return null
-        return buildJoinFk(t1Info, t2Info, "a", t1, t2)
-            ?: buildJoinFk(t2Info, t1Info, "b", t2, t1)
-            ?: Interpretation("SELECT * FROM $t1, $t2", "Cross-joining $t1 and $t2 (no FK found)")
-    }
+    /** Build a JOIN interpretation between two tables, trying both FK directions. */
+    private fun buildJoin(t1: String, t2: String): Interpretation? =
+        tableInfo(t1)?.let { t1Info -> tableInfo(t2)?.let { t2Info ->
+            buildJoinFk(t1Info, t2Info, "a", t1, t2)
+                ?: buildJoinFk(t2Info, t1Info, "b", t2, t1)
+                ?: Interpretation("SELECT * FROM $t1, $t2", "Cross-joining $t1 and $t2 (no FK found)")
+        } }
 
-    /** Build a JOIN SQL from `from` table FK-referencing `to` table, or null if no FK. */
-    private fun buildJoinFk(
-        from: DatabaseManager.TableInfo,
-        to: DatabaseManager.TableInfo,
-        alias: String,
-        fromName: String,
-        toName: String
-    ): Interpretation? {
+    /** Build a JOIN SQL when `from` has an FK referencing `to`, or null. */
+    private fun buildJoinFk(from: DatabaseManager.TableInfo, to: DatabaseManager.TableInfo, alias: String, fromName: String, toName: String): Interpretation? =
         resolveForeignKeyFromTo(from, to)?.let { (fkCol, refCol) ->
             val toCols = to.columns.filter { it.name.lowercase() != refCol.lowercase() }
                 .joinToString(", ") { "$toName.${it.name} AS ${toName.lowercase()}_${it.name.lowercase()}" }
-            return Interpretation(
-                "SELECT $alias.*, $toCols FROM $fromName $alias JOIN $toName ON $alias.$fkCol = $toName.$refCol",
-                "Joining $fromName and $toName on $fkCol"
-            )
+            Interpretation("SELECT $alias.*, $toCols FROM $fromName $alias JOIN $toName ON $alias.$fkCol = $toName.$refCol",
+                "Joining $fromName and $toName on $fkCol")
         }
-        return null
-    }
 
+    /** Check whether a field name is known as a column, table, or synonym. */
     private fun isKnownField(name: String): Boolean {
         val key = name.trim().lowercase()
         return columnIndex.containsKey(key) || resolveTable(key) != null || columnSynonyms.containsKey(key)
     }
 
-    private fun resolveForeignKeyFromTo(
-        from: DatabaseManager.TableInfo,
-        to: DatabaseManager.TableInfo
-    ): Pair<String, String>? {
+    /** Find an FK pair where `from` has a column ending in `_id` matching `to`. */
+    private fun resolveForeignKeyFromTo(from: DatabaseManager.TableInfo, to: DatabaseManager.TableInfo): Pair<String, String>? {
         val toSingular = to.name.lowercase().removeSuffix("es").removeSuffix("s")
-        for (col in from.columns) {
+        return from.columns.firstOrNull { col ->
             val lower = col.name.lowercase()
-            if (lower.endsWith("_id") && lower.removeSuffix("_id") in listOf(toSingular, to.name.lowercase())) {
-                val idCol = to.columns.firstOrNull { it.name.lowercase() == "id" } ?: to.columns.first()
-                return col.name to idCol.name
-            }
-        }
-        return null
+            lower.endsWith("_id") && lower.removeSuffix("_id") in listOf(toSingular, to.name.lowercase())
+        }?.let { col -> col.name to (to.columns.firstOrNull { it.name.lowercase() == "id" }?.name ?: to.columns.first().name) }
     }
 
+    /** Build a map of column name → canonical name, including stripped suffixes and hardcoded aliases. */
     private fun buildColumnSynonyms(): Map<String, String> {
         val map = mutableMapOf<String, String>()
         for (table in schema) for (col in table.columns) {
@@ -342,77 +284,46 @@ class SqlPromptInterpreter(
             map[lower.replace("_", " ")] = col.name
             map[lower.replace("_", "")] = col.name
         }
-        map["wage"] = map["salary"] ?: "salary"
-        map["income"] = map["salary"] ?: "salary"
-        map["plat"] = map["salary"] ?: "salary"
-        map["jmeno"] = map["name"] ?: "name"
-        map["oddeleni"] = map["department_id"] ?: map["department"] ?: "department_id"
-        map["cena"] = map["price"] ?: "price"
-        map["cost"] = map["price"] ?: "price"
-        map["skladem"] = map["stock"] ?: "stock"
-        map["quantity"] = map["stock"] ?: "stock"
-        map["kategorie"] = map["category"] ?: "category"
-        map["misto"] = map["location"] ?: "location"
-        map["city"] = map["location"] ?: "location"
-        map["nastup"] = map["hire_date"] ?: "hire_date"
-        map["datum"] = map["date"] ?: "date"
+        map.putAll(COLUMN_ALIASES)
         return map
     }
 
     companion object {
         private val RE_WS = Regex("\\s+")
         private val RE_BARE_WORD = Regex("^\\w+$")
-
         private val RE_SHOW = Regex("(?:show|display|list|all|select|zobraz|vsechny)\\s+(.+?)(?:\\s+table)?$")
         private val RE_DESC = Regex("(?:describe|structure|schema|info)\\s+(.+?)(?:\\s+table)?$")
         private val RE_COUNT = Regex("(?:how many|count|pocet|kolik)\\s+(.+?)(?:\\s+in\\s+(.+))?$")
-        private val RE_FIND =
-            Regex("(?:find|search|select|get|where|najdi|vyhledej|uka?z)\\s+(.+?)(?:\\s+(?:in|from|where|with|that|kde|s|v|ve|z)\\s+(.+))?$")
+        private val RE_FIND = Regex("(?:find|search|select|get|where|najdi|vyhledej|uka?z)\\s+(.+?)(?:\\s+(?:in|from|where|with|that|kde|s|v|ve|z)\\s+(.+))?$")
         private val AGG_GROUPS = mapOf(
             "AVG" to listOf("average", "avg", "prumer"),
             "SUM" to listOf("sum", "soucet", "total"),
             "MIN" to listOf("min", "minimum", "nejmensi", "nejlevnejsi", "most cheap", "cheapest", "lowest"),
-            "MAX" to listOf("max", "maximum", "nejvetsi", "nejdrazsi", "most expensive", "top", "highest")
-        )
+            "MAX" to listOf("max", "maximum", "nejvetsi", "nejdrazsi", "most expensive", "top", "highest"))
         private val AGG_MAP = AGG_GROUPS.flatMap { (fn, words) -> words.map { it to fn } }.toMap()
-
-        private val RE_AGG = Regex(
-            "(" + AGG_MAP.keys.joinToString("|") { Regex.escape(it) } + ")\\s+(.+?)(?:\\s+(?:by|per|podle|dle)\\s+(.+))?$"
-        )
-
+        private val RE_AGG = Regex("(" + AGG_MAP.keys.joinToString("|") { Regex.escape(it) } + ")\\s+(.+?)(?:\\s+(?:by|per|podle|dle)\\s+(.+))?$")
         private val RE_TABLE_WHERE = Regex("^(\\w+)\\s+(?:in|from|v|z|with|s|kde|where)\\s+(.+)$")
         private val RE_JOIN = Regex("(?:join|spoj)\\s+(\\w+)\\s+(?:and|with|a|s)\\s+(\\w+)")
         private val RE_BARE_COND = Regex("^(\\w+)\\s*(>|<|>=|<=|=|!=|equals|is|like)\\s*(.+)$")
         private val RE_OP = Regex("^(\\w+)\\s*(>|<|>=|<=|=|!=)\\s*(.+)$")
         private val RE_BARE_EQ_OR_TEXT = Regex("^(\\w+)\\s+(.+)$")
-
         private val SHOW_TABLES = setOf("show tables", "list tables", "tables")
         private val HELP_WORDS = setOf("help", "prompts", "examples", "commands", "napoveda", "priklady")
-
+        private val COLUMN_ALIASES = mapOf(
+            "wage" to "salary", "income" to "salary", "plat" to "salary",
+            "jmeno" to "name", "oddeleni" to "department_id",
+            "cena" to "price", "cost" to "price",
+            "skladem" to "stock", "quantity" to "stock",
+            "kategorie" to "category",
+            "misto" to "location", "city" to "location",
+            "nastup" to "hire_date", "datum" to "date")
         private val ASC_WORDS = AGG_MAP.filterValues { it == "MIN" }.keys
-
         private val DUNNO = Interpretation("", "I didn't understand")
 
-        /** Quote a value for SQL — pass numerics through, quote strings with escape. */
-        private fun quoteVal(v: String): String {
-            // check if value contains only digits/dots/minus (unstripped, no leading/trailing quote)
-            val t = v.trim()
-            return if (t.toDoubleOrNull() != null) t else "'${t.replace("'", "''")}'"
-        }
-
-        /** True when the SQL value is a quoted string (needs case-insensitive comparison). */
+        private fun quoteVal(v: String): String { val t = v.trim(); return if (t.toDoubleOrNull() != null) t else "'${t.replace("'", "''")}'" }
         private fun isQuoted(v: String) = v.startsWith("'")
-
-        /** Wrap field in LOWER() when comparing against a string. */
         private fun cmpField(f: String, v: String) = if (isQuoted(v)) "LOWER($f)" else f
-
-        private fun isText(type: String) =
-            type.lowercase().let { it.contains("varchar") || it.contains("char") || it.contains("text") }
-
-        private fun isNum(type: String) = type.lowercase().let {
-            it.contains("int") || it.contains("decimal") || it.contains("numeric") || it.contains("float") || it.contains(
-                "double"
-            ) || it.contains("real")
-        }
+        private fun isText(type: String) = type.lowercase().let { it.contains("varchar") || it.contains("char") || it.contains("text") }
+        private fun isNum(type: String) = type.lowercase().let { it.contains("int") || it.contains("decimal") || it.contains("numeric") || it.contains("float") || it.contains("double") || it.contains("real") }
     }
 }

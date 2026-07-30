@@ -65,7 +65,9 @@ class DatabaseManager(dbPath: String = "mem:assistant_db") {
         "average salary by department",
         "cheapest product",
         "employee with lowest salary",
-        "SELECT * FROM employees WHERE salary > 70000"
+        "SELECT * FROM employees WHERE salary > 70000",
+        "top product",
+        "top employee"
     )
 
     /**

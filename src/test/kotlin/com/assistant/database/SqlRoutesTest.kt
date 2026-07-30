@@ -8,11 +8,25 @@ import io.ktor.server.testing.*
 import io.ktor.server.plugins.contentnegotiation.ContentNegotiation
 import io.ktor.serialization.kotlinx.json.json
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
 class SqlRoutesTest {
+
+    private fun sqlField(body: String): String =
+        Json.parseToJsonElement(body).jsonObject["sql"]?.jsonPrimitive?.content ?: ""
+
+    private fun rowCount(body: String): Int =
+        Json.parseToJsonElement(body).jsonObject["rowCount"]?.jsonPrimitive?.content?.toIntOrNull() ?: -1
+
+    private fun rows(body: String): List<List<String>> {
+        val arr = Json.parseToJsonElement(body).jsonObject["rows"] ?: return emptyList()
+        return arr.jsonArray.map { it.jsonArray.map { el -> el.jsonPrimitive.content } }
+    }
 
     private fun testApp(test: suspend ApplicationTestBuilder.() -> Unit) = testApplication {
         install(ContentNegotiation) {
@@ -40,7 +54,7 @@ class SqlRoutesTest {
         assertEquals(HttpStatusCode.OK, response.status)
         val body = response.bodyAsText()
         assertTrue(body.contains("TABLE_NAME"), "Response should contain TABLE_NAME column")
-        assertTrue(body.contains("rowCount"), "Response should contain rowCount field")
+        assertEquals(3, rowCount(body))
     }
 
     @Test
@@ -51,9 +65,8 @@ class SqlRoutesTest {
         }
         assertEquals(HttpStatusCode.OK, response.status)
         val body = response.bodyAsText()
+        assertEquals(10, rowCount(body))
         assertTrue(body.contains("Jan Novak"), "Response should contain sample employee 'Jan Novak'")
-        assertTrue(body.contains("salary", ignoreCase = true), "Response should contain salary column")
-        assertTrue(body.contains("rowCount"), "Response should contain rowCount field")
     }
 
     @Test
@@ -64,13 +77,9 @@ class SqlRoutesTest {
         }
         assertEquals(HttpStatusCode.OK, response.status)
         val body = response.bodyAsText()
-        assertTrue(body.contains("sql"), "Response should contain generated SQL")
-        assertTrue(body.contains("department_id", ignoreCase = true), "SQL should filter by department")
-        // Engineering employees should be returned (case-insensitive subquery)
-        assertTrue(
-            body.contains("Jan Novak") || body.contains("Petr Svoboda"),
-            "Response should contain Engineering employees"
-        )
+        val sql = sqlField(body)
+        assertTrue(sql.contains("department_id", ignoreCase = true), "SQL should filter by department")
+        assertEquals(3, rowCount(body))
     }
 
     @Test
@@ -81,22 +90,23 @@ class SqlRoutesTest {
         }
         assertEquals(HttpStatusCode.OK, response.status)
         val body = response.bodyAsText()
-        assertTrue(body.contains("COUNT", ignoreCase = true), "SQL should use COUNT")
-        assertTrue(body.contains("10"), "Response should show count of 10 products")
-        assertTrue(body.contains("rowCount"), "Response should contain rowCount")
+        val sql = sqlField(body)
+        assertTrue(sql.contains("COUNT(*)", ignoreCase = true), "SQL should use COUNT(*)")
+        assertEquals(1, rowCount(body))
+        assertTrue(rows(body).any() { it.contains("10") })
     }
 
     @Test
-    fun `products with price greater than 50 returns products`() = testApp {
+    fun `products with price greater than 900 returns products`() = testApp {
         val response = client.post("/sql/query") {
             contentType(ContentType.Application.Json)
             setBody("""{"prompt": "products with price > 900"}""")
         }
         assertEquals(HttpStatusCode.OK, response.status)
         val body = response.bodyAsText()
-        assertTrue(body.contains("price", ignoreCase = true), "SQL should contain price column")
-        assertTrue(body.contains("rowCount"), "Response should contain rowCount")
-        assertTrue(body.contains("Laptop Pro X1"), "Response should contain a product")
+        val sql = sqlField(body)
+        assertTrue(sql.contains("PRICE > 900", ignoreCase = true), "SQL should filter PRICE > 900")
+        assertEquals(8, rowCount(body))
     }
 
     @Test
@@ -107,10 +117,11 @@ class SqlRoutesTest {
         }
         assertEquals(HttpStatusCode.OK, response.status)
         val body = response.bodyAsText()
-        assertTrue(body.contains("JOIN", ignoreCase = true), "SQL should use JOIN")
-        assertTrue(body.contains("departments_name", ignoreCase = true), "Result should have departments_name column")
-        assertTrue(body.contains("Prague", ignoreCase = true), "Result should contain location data")
-        assertTrue(body.contains("rowCount"), "Response should contain rowCount")
+        val sql = sqlField(body)
+        assertTrue(sql.contains("JOIN", ignoreCase = true), "SQL should use JOIN")
+        assertTrue(sql.contains("FROM EMPLOYEES", ignoreCase = true), "SQL should alias employee columns")
+        assertTrue(sql.contains("DEPARTMENTS", ignoreCase = true), "SQL should alias departments columns")
+        assertEquals(10, rowCount(body))
     }
 
     @Test
@@ -121,11 +132,12 @@ class SqlRoutesTest {
         }
         assertEquals(HttpStatusCode.OK, response.status)
         val body = response.bodyAsText()
-        assertTrue(body.contains("AVG", ignoreCase = true), "SQL should use AVG")
-        assertTrue(body.contains("group_name", ignoreCase = true), "Result should have group_name column")
-        assertTrue(body.contains("agg_value", ignoreCase = true), "Result should have agg_value column")
-        assertTrue(body.contains("Engineering"), "Result should contain Engineering department")
-        assertTrue(body.contains("rowCount"), "Response should contain rowCount")
+        val sql = sqlField(body)
+        assertTrue(sql.contains("AVG("), "SQL should use AVG")
+        assertTrue(sql.contains("group_name"), "SQL should have group_name alias")
+        assertTrue(sql.contains("AVG_SALARY"), "SQL should have AVG_SALARY alias")
+        assertEquals(5, rowCount(body))
+        assertTrue(rows(body).any() { it.contains("Engineering") },"Result should contain Engineering department")
     }
 
     @Test
@@ -136,9 +148,10 @@ class SqlRoutesTest {
         }
         assertEquals(HttpStatusCode.OK, response.status)
         val body = response.bodyAsText()
-        assertTrue(body.contains("price", ignoreCase = true), "SQL should sort by price")
+        val sql = sqlField(body)
+        assertTrue(sql.contains("ORDER BY price ASC") || sql.contains("ORDER BY PRICE ASC"), "SQL should sort by price ASC")
+        assertEquals(1, rowCount(body))
         assertTrue(body.contains("Water Bottle 1L"), "Cheapest product should be 'Water Bottle 1L' (399 CZK)")
-        assertTrue(body.contains("rowCount"), "Response should contain rowCount")
     }
 
     @Test
@@ -149,10 +162,10 @@ class SqlRoutesTest {
         }
         assertEquals(HttpStatusCode.OK, response.status)
         val body = response.bodyAsText()
-        assertTrue(body.contains("price", ignoreCase = true), "SQL should sort by price")
-        assertTrue(body.contains("DESC", ignoreCase = true), "Should use descending order")
+        val sql = sqlField(body)
+        assertTrue(sql.contains("ORDER BY price DESC") || sql.contains("ORDER BY PRICE DESC"), "SQL should sort by price DESC")
+        assertEquals(1, rowCount(body))
         assertTrue(body.contains("Laptop Pro X1"), "Most expensive should be 'Laptop Pro X1' (45990 CZK)")
-        assertTrue(body.contains("rowCount"), "Response should contain rowCount")
     }
 
     @Test
@@ -163,10 +176,10 @@ class SqlRoutesTest {
         }
         assertEquals(HttpStatusCode.OK, response.status)
         val body = response.bodyAsText()
-        System.err.println(body)
-        assertTrue(body.contains("stock", ignoreCase = true), "SQL should sort by stock")
+        val sql = sqlField(body)
+        assertTrue(sql.contains("ORDER BY stock ASC") || sql.contains("ORDER BY STOCK ASC"), "SQL should sort by stock ASC")
+        assertEquals(1, rowCount(body))
         assertTrue(body.contains("Standing Desk"), "Lowest stock should be 'Standing Desk' (4 units)")
-        assertTrue(body.contains("\"rowCount\": 1"), "Response should contain rowCount 1")
     }
 
     @Test
@@ -177,9 +190,10 @@ class SqlRoutesTest {
         }
         assertEquals(HttpStatusCode.OK, response.status)
         val body = response.bodyAsText()
-        assertTrue(body.contains("salary", ignoreCase = true), "SQL should sort by salary")
+        val sql = sqlField(body)
+        assertTrue(sql.contains("ORDER BY salary ASC") || sql.contains("ORDER BY SALARY ASC"), "SQL should sort by salary ASC")
+        assertEquals(1, rowCount(body))
         assertTrue(body.contains("David Hora"), "Lowest salary employee should be 'David Hora' (51000 CZK)")
-        assertTrue(body.contains("rowCount"), "Response should contain rowCount")
     }
 
     @Test
@@ -190,9 +204,10 @@ class SqlRoutesTest {
         }
         assertEquals(HttpStatusCode.OK, response.status)
         val body = response.bodyAsText()
-        assertTrue(body.contains("SELECT"), "Response should contain the raw SQL")
-        assertTrue(body.contains("salary", ignoreCase = true), "Result should contain salary column")
-        assertTrue(body.contains("rowCount"), "Response should contain rowCount")
+        val sql = sqlField(body)
+        assertEquals("SELECT * FROM employees WHERE salary > 70000", sql)
+        assertTrue(body.contains("Lucie Kralova"), "Result should contain high earners")
+        assertEquals(6, rowCount(body))
     }
 
     @Test
@@ -203,8 +218,8 @@ class SqlRoutesTest {
         }
         assertEquals(HttpStatusCode.OK, response.status)
         val body = response.bodyAsText()
+        assertEquals(3, rowCount(body))
         assertTrue(body.contains("Lucie Kralova"), "Top earner should be Lucie Kralova (105000)")
-        assertTrue(body.contains("rowCount"), "Response should contain rowCount")
     }
 
     @Test
@@ -215,8 +230,10 @@ class SqlRoutesTest {
         }
         assertEquals(HttpStatusCode.OK, response.status)
         val body = response.bodyAsText()
-        assertTrue(body.contains("DATA_TYPE", ignoreCase = true), "Describe should show DATA_TYPE")
-        assertTrue(body.contains("COLUMN_NAME", ignoreCase = true), "Describe should show COLUMN_NAME")
+        val sql = sqlField(body)
+        assertTrue(sql.contains("INFORMATION_SCHEMA.COLUMNS"), "Describe should query INFORMATION_SCHEMA")
+        assertTrue(sql.lowercase().contains("employees"), "Should describe employees table")
+        assertTrue(rowCount(body) > 0)
     }
 
     @Test
@@ -254,9 +271,9 @@ class SqlRoutesTest {
         }
         assertEquals(HttpStatusCode.OK, response.status)
         val body = response.bodyAsText()
+        assertEquals(5, rowCount(body))
         assertTrue(body.contains("Engineering"), "Response should contain Engineering department")
         assertTrue(body.contains("Prague"), "Response should contain Prague")
-        assertTrue(body.contains("rowCount"), "Response should contain rowCount")
     }
 
     @Test
@@ -267,9 +284,10 @@ class SqlRoutesTest {
         }
         assertEquals(HttpStatusCode.OK, response.status)
         val body = response.bodyAsText()
-        assertTrue(body.contains("COUNT", ignoreCase = true), "SQL should use COUNT")
-        assertTrue(body.contains("10"), "Response should show count of 10 employees")
-        assertTrue(body.contains("rowCount"), "Response should contain rowCount")
+        val sql = sqlField(body)
+        assertTrue(sql.contains("COUNT(*)", ignoreCase = true), "SQL should use COUNT(*)")
+        assertEquals(1, rowCount(body))
+        assertTrue(rows(body).any() { it.contains("10") })
     }
 
     @Test
@@ -280,9 +298,9 @@ class SqlRoutesTest {
         }
         assertEquals(HttpStatusCode.OK, response.status)
         val body = response.bodyAsText()
-        assertTrue(body.contains("price", ignoreCase = true), "SQL should contain price")
-        assertTrue(body.contains("5000"), "Should filter by price > 5000")
-        assertTrue(body.contains("rowCount"), "Response should contain rowCount")
+        val sql = sqlField(body)
+        assertTrue(sql.contains("PRICE > 5000") || sql.contains("price > 5000"), "SQL should filter PRICE > 5000")
+        assertEquals(4, rowCount(body))
     }
 
     @Test
@@ -293,10 +311,11 @@ class SqlRoutesTest {
         }
         assertEquals(HttpStatusCode.OK, response.status)
         val body = response.bodyAsText()
-        assertTrue(body.contains("SUM", ignoreCase = true), "SQL should use SUM")
-        assertTrue(body.contains("group_name", ignoreCase = true), "Result should have group_name column")
-        assertTrue(body.contains("agg_value", ignoreCase = true), "Result should have agg_value column")
-        assertTrue(body.contains("rowCount"), "Response should contain rowCount")
+        val sql = sqlField(body)
+        assertTrue(sql.contains("SUM("), "SQL should use SUM")
+        assertTrue(sql.contains("group_name"), "SQL should have group_name alias")
+        assertTrue(sql.contains("SUM_PRICE"), "SQL should have SUM_PRICE alias")
+        assertEquals(4, rowCount(body))
     }
 
     @Test
@@ -343,9 +362,10 @@ class SqlRoutesTest {
         }
         assertEquals(HttpStatusCode.OK, response.status)
         val body = response.bodyAsText()
-        assertTrue(body.contains("salary", ignoreCase = true), "SQL should sort by salary")
+        val sql = sqlField(body)
+        assertTrue(sql.contains("ORDER BY salary ASC") || sql.contains("ORDER BY SALARY ASC"), "SQL should sort by salary ASC")
+        assertEquals(1, rowCount(body))
         assertTrue(body.contains("David Hora"), "Lowest salary employee should be 'David Hora' (51000 CZK)")
-        assertTrue(body.contains("rowCount"), "Response should contain rowCount")
     }
 
     @Test
@@ -367,10 +387,11 @@ class SqlRoutesTest {
         }
         assertEquals(HttpStatusCode.OK, response.status)
         val body = response.bodyAsText()
-        assertTrue(body.contains("AVG", ignoreCase = true), "SQL should use AVG")
-        assertTrue(body.contains("group_name", ignoreCase = true), "Result should have group_name column")
-        assertTrue(body.contains("agg_value", ignoreCase = true), "Result should have agg_value column")
-        assertTrue(body.contains("rowCount"), "Response should contain rowCount")
+        val sql = sqlField(body)
+        assertTrue(sql.contains("AVG("), "SQL should use AVG")
+        assertTrue(sql.contains("group_name"), "SQL should have group_name alias")
+        assertTrue(sql.contains("AVG_PRICE"), "SQL should have AVG_PRICE alias")
+        assertEquals(4, rowCount(body))
     }
 
     @Test
@@ -381,10 +402,11 @@ class SqlRoutesTest {
         }
         assertEquals(HttpStatusCode.OK, response.status)
         val body = response.bodyAsText()
-        assertTrue(body.contains("WHERE", ignoreCase = true), "SQL should have WHERE clause")
-        assertTrue(body.contains("ID", ignoreCase = true), "SQL should filter by ID")
+        val sql = sqlField(body)
+        assertTrue(sql.contains("WHERE"), "SQL should have WHERE clause")
+        assertTrue(sql.contains("ID = 1") || sql.contains("id = 1"), "SQL should filter by ID = 1")
+        assertEquals(1, rowCount(body))
         assertTrue(body.contains("Model X") || body.contains("Laptop"), "Should return product with id 1")
-        assertTrue(body.contains("rowCount"), "Response should contain rowCount")
     }
 
     @Test
@@ -406,8 +428,9 @@ class SqlRoutesTest {
         }
         assertEquals(HttpStatusCode.OK, response.status)
         val body = response.bodyAsText()
-        assertTrue(body.contains("STOCK = 7", ignoreCase = true), "SQL should filter stock = 7")
-        assertTrue(body.contains("rowCount"), "Response should contain rowCount")
+        val sql = sqlField(body)
+        assertTrue(sql.contains("STOCK = 7") || sql.contains("stock = 7"), "SQL should filter stock = 7")
+        assertEquals(1, rowCount(body))
     }
 
     @Test
@@ -418,9 +441,9 @@ class SqlRoutesTest {
         }
         assertEquals(HttpStatusCode.OK, response.status)
         val body = response.bodyAsText()
-        assertTrue(body.contains("PRICE > 1000", ignoreCase = true), "SQL should filter PRICE > 1000")
-        assertTrue(body.contains("Laptop Pro X1"), "Should include expensive products")
-        assertTrue(body.contains("rowCount"), "Response should contain rowCount")
+        val sql = sqlField(body)
+        assertTrue(sql.contains("PRICE > 1000") || sql.contains("price > 1000"), "SQL should filter PRICE > 1000")
+        assertEquals(8, rowCount(body))
     }
 
     @Test
@@ -431,8 +454,8 @@ class SqlRoutesTest {
         }
         assertEquals(HttpStatusCode.OK, response.status)
         val body = response.bodyAsText()
+        assertEquals(10, rowCount(body))
         assertTrue(body.contains("Jan Novak"), "Should return all employees")
-        assertTrue(body.contains("rowCount"), "Response should contain rowCount")
     }
 
     @Test
@@ -443,23 +466,22 @@ class SqlRoutesTest {
         }
         assertEquals(HttpStatusCode.OK, response.status)
         val body = response.bodyAsText()
-        assertTrue(body.contains("price", ignoreCase = true), "SQL should sort by price DESC")
+        val sql = sqlField(body)
+        assertTrue(sql.contains("ORDER BY price DESC") || sql.contains("ORDER BY PRICE DESC"), "SQL should sort by price DESC")
+        assertEquals(1, rowCount(body))
         assertTrue(body.contains("Laptop Pro X1"), "Highest price should be 'Laptop Pro X1'")
     }
 
     @Test
-    fun `join departments and products returns I didnt understand because no FK`() = testApp {
+    fun `join departments and products returns cross join`() = testApp {
         val response = client.post("/sql/query") {
             contentType(ContentType.Application.Json)
             setBody("""{"prompt": "join departments and products"}""")
         }
         assertEquals(HttpStatusCode.OK, response.status)
         val body = response.bodyAsText()
-        println(body)
-        assertTrue(
-            body.contains("Cross-joining DEPARTMENTS and PRODUCTS (no FK found)"),
-            "No FK between departments and products should fail"
-        )
+        val sql = sqlField(body)
+        assertTrue(sql.contains("FROM DEPARTMENTS, PRODUCTS"), "No FK between departments and products should cross-join")
     }
 
     @Test
@@ -470,9 +492,11 @@ class SqlRoutesTest {
         }
         assertEquals(HttpStatusCode.OK, response.status)
         val body = response.bodyAsText()
-        assertTrue(body.contains("COUNT", ignoreCase = true), "SQL should use COUNT")
-        assertTrue(body.contains("WHERE", ignoreCase = true), "SQL should have WHERE clause")
-        assertTrue(body.contains("price", ignoreCase = true), "SQL should filter by price")
+        val sql = sqlField(body)
+        assertTrue(sql.contains("COUNT(*)", ignoreCase = true), "SQL should use COUNT(*)")
+        assertTrue(sql.contains("WHERE", ignoreCase = true), "SQL should have WHERE clause")
+        assertTrue(sql.contains("price", ignoreCase = true), "SQL should filter by price")
+        assertEquals(1, rowCount(body))
     }
 
     @Test
@@ -483,9 +507,9 @@ class SqlRoutesTest {
         }
         assertEquals(HttpStatusCode.OK, response.status)
         val body = response.bodyAsText()
-        assertTrue(body.contains("LOWER(CATEGORY) = 'electronics'", ignoreCase = true), "SQL should filter CATEGORY")
-        assertTrue(body.contains("Laptop Pro X1"), "Should include Electronics products")
-        assertTrue(body.contains("rowCount"), "Response should contain rowCount")
+        val sql = sqlField(body)
+        assertTrue(sql.contains("LOWER(CATEGORY)"), "SQL should use LOWER for case-insensitive match")
+        assertEquals(5, rowCount(body))
     }
 
     @Test
@@ -507,8 +531,9 @@ class SqlRoutesTest {
         }
         assertEquals(HttpStatusCode.OK, response.status)
         val body = response.bodyAsText()
-        assertTrue(body.contains("DEPARTMENT_ID = 1", ignoreCase = true), "SQL should filter DEPARTMENT_ID = 1")
-        assertTrue(body.contains("Jan Novak"), "Should include Engineering employees")
+        val sql = sqlField(body)
+        assertTrue(sql.contains("DEPARTMENT_ID = 1") || sql.contains("department_id = 1"), "SQL should filter DEPARTMENT_ID = 1")
+        assertEquals(3, rowCount(body))
     }
 
     @Test
@@ -519,7 +544,9 @@ class SqlRoutesTest {
         }
         assertEquals(HttpStatusCode.OK, response.status)
         val body = response.bodyAsText()
-        assertTrue(body.contains("price", ignoreCase = true), "SQL should sort by price ASC")
+        val sql = sqlField(body)
+        assertTrue(sql.contains("ORDER BY price ASC") || sql.contains("ORDER BY PRICE ASC"), "SQL should sort by price ASC")
+        assertEquals(1, rowCount(body))
         assertTrue(body.contains("Water Bottle 1L"), "Min price should be 'Water Bottle 1L' (399 CZK)")
     }
 
@@ -542,8 +569,10 @@ class SqlRoutesTest {
         }
         assertEquals(HttpStatusCode.OK, response.status)
         val body = response.bodyAsText()
-        assertTrue(body.contains("AVG", ignoreCase = true), "SQL should use AVG")
-        assertTrue(body.contains("group_name", ignoreCase = true), "Result should have group_name")
+        val sql = sqlField(body)
+        assertTrue(sql.contains("AVG("), "SQL should use AVG")
+        assertTrue(sql.contains("group_name"), "SQL should have group_name alias")
+        assertEquals(5, rowCount(body))
         assertTrue(body.contains("Engineering"), "Should contain Engineering department")
     }
 
@@ -555,7 +584,9 @@ class SqlRoutesTest {
         }
         assertEquals(HttpStatusCode.OK, response.status)
         val body = response.bodyAsText()
-        assertTrue(body.contains("salary", ignoreCase = true), "SQL should sort by salary DESC")
+        val sql = sqlField(body)
+        assertTrue(sql.contains("ORDER BY salary DESC") || sql.contains("ORDER BY SALARY DESC"), "SQL should sort by salary DESC")
+        assertEquals(1, rowCount(body))
         assertTrue(body.contains("Lucie Kralova"), "Highest salary should be 'Lucie Kralova' (105000 CZK)")
     }
 
@@ -567,8 +598,9 @@ class SqlRoutesTest {
         }
         assertEquals(HttpStatusCode.OK, response.status)
         val body = response.bodyAsText()
-        assertTrue(body.contains("stock", ignoreCase = true), "Result should contain stock column")
+        val sql = sqlField(body)
+        assertEquals("select * from products where stock < 10", sql.lowercase())
+        assertEquals(3, rowCount(body))
         assertTrue(body.contains("Standing Desk"), "Should include low stock products")
-        assertTrue(body.contains("rowCount"), "Response should contain rowCount")
     }
 }
