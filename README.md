@@ -1,121 +1,154 @@
 # Kotlin AI Assistant  (built with help from AI)
 
-A lightweight AI assistant built entirely in Kotlin with a **tiny neural network model** running directly in the JVM — no external AI APIs, no TensorFlow, no Python dependencies.
+A lightweight AI assistant built entirely in Kotlin, running directly in the JVM — no external
+AI APIs, no TensorFlow, no Python dependencies. It ships **two assistants in one**:
 
-## Features
+- **💬 Chatbot** — a tiny neural-network chat assistant that understands Czech and English
+- **🗄️ SQL Assistant** — a natural-language → SQL engine that understands what you *mean*
+  and translates it into real SQL against an embedded H2 database
 
-- **Tiny Neural Network** — a feedforward NN with embedding → hidden → softmax layers (~320 parameters)
-- **Intent Classification** — recognizes 10 intent types in Czech and English
-- **Conversation Memory** — in-memory session history with context-aware follow-up detection
-- **REST API** — Ktor server with JSON endpoints
-- **Web UI** — built-in HTML chat interface at `http://localhost:8080/`
+```mermaid
+flowchart TB
+    subgraph App [Kotlin AI Assistant - Ktor Server :8080]
+        C[Chatbot<br/>tiny neural network]
+        S[SQL Assistant<br/>SqlPromptInterpreter]
+    end
+    App --> U[Web UI<br/>Chat tab + SQL tab]
+    C -->|POST /chat| CH[Conversation memory + intents]
+    S -->|POST /sql/query| SQ[NL to SQL<br/>embedded H2 database]
+```
 
-## Tech Stack
+> 📚 **Full documentation**
+> - [**SQL Assistant docs**](docs/SQLAssistant.md) — how it understands natural language,
+>   every supported prompt with generated SQL, complete synonym catalog, architecture
+> - [**Chatbot docs**](docs/Chatbot.md) — features, chat API, model internals
+
+---
+
+## 🗄️ SQL Assistant (main focus)
+
+The **SQL Assistant** is the flagship feature: you type a plain-English (or plain-Czech 🇨🇿)
+question and it *understands* it, translates it into a real SQL query, runs it against the
+embedded H2 database, and shows you the results — **plus the generated SQL and a
+human-readable explanation**.
+
+```mermaid
+flowchart LR
+    A["You type a question<br/>e.g. 'top employee'"] --> B["POST /sql/query"]
+    B --> C["SqlPromptInterpreter<br/>understands intent"]
+    C --> D["Generated SQL<br/>SELECT * FROM employees<br/>ORDER BY salary DESC LIMIT 1"]
+    D --> E["Embedded H2 database"]
+    E --> F["Rows + SQL + explanation<br/>shown in the web UI"]
+```
+
+### "It understands human language"
+
+The interpreter is **schema-driven**: it reads the live database schema
+(`GET /sql/schema`) instead of hardcoding table names. When you say **"top employee"**, it:
+
+1. Recognizes `top` as an aggregation word for `MAX`
+2. Recognizes `employee` as the `employees` table (singular/plural inflection)
+3. Picks the natural numeric column — `salary` — because `id` / `*_id` columns are skipped
+4. Builds `SELECT * FROM employees ORDER BY salary DESC LIMIT 1`
+
+That's the *"top employee → select employee with highest salary"* translation. The same
+engine handles counting, filtering (`find employees in Engineering`), joins
+(`join employees and departments`), grouped aggregations (`average salary by department`),
+extremes (`cheapest product`), bare conditions (`price > 900`), raw SQL passthrough — in
+**English and Czech**. Every supported phrase and every synonym is catalogued in the
+[SQL Assistant docs](docs/SQLAssistant.md).
+
+### SQL quick start
+
+```bash
+./gradlew run        # server starts at http://localhost:8080
+```
+
+Open `http://localhost:8080`, switch to the **SQL** tab and type a prompt (the UI shows
+example prompts as clickable chips), or call the API:
+
+```bash
+curl -X POST http://localhost:8080/sql/query \
+  -H "Content-Type: application/json" \
+  -d '{"prompt": "top employee"}'
+```
+
+| SQL endpoint | Purpose |
+|--------------|---------|
+| `POST /sql/query` | Natural language prompt → SQL → results |
+| `POST /sql/execute` | Raw SQL execution (power users) |
+| `GET /sql/schema` | Live database schema (tables & columns) |
+| `GET /sql/prompts` | Example prompts shown as chips in the UI |
+
+![SQL tab translating a prompt](docs/sql/average_salary.png)
+*The SQL tab in the web UI — prompt chips, natural-language input, generated SQL + explanation, results.*
+
+---
+
+## 💬 Chatbot
+
+A tiny feedforward neural network (embedding → hidden → softmax, ~320 parameters) classifies
+10 intent types in Czech and English, backed by in-memory conversation memory.
+
+```bash
+curl -X POST http://localhost:8080/chat \
+  -H "Content-Type: application/json" \
+  -d '{"message": "Ahoj, jak se máš?", "sessionId": "user123"}'
+```
+
+| Chat endpoint | Purpose |
+|---------------|---------|
+| `POST /chat` | Send a message, get an intent-classified reply |
+| `GET /chat/history?sessionId=...` | Conversation history |
+| `POST /chat/clear` | Clear session history |
+| `GET /status` | Model information |
+
+Full details — features, API reference, model internals, project structure — are in the
+[Chatbot docs](docs/Chatbot.md).
+
+---
+
+## Quick start (both)
+
+```bash
+./gradlew run        # http://localhost:8080 — Chat tab + SQL tab
+```
+
+| Component | Docs | Endpoints |
+|-----------|------|-----------|
+| 💬 Chatbot | [Chatbot.md](docs/Chatbot.md) | `/chat`, `/chat/history`, `/chat/clear`, `/status` |
+| 🗄️ SQL Assistant | [SQLAssistant.md](docs/SQLAssistant.md) | `/sql/query`, `/sql/execute`, `/sql/schema`, `/sql/prompts` |
+
+## Tech stack
 
 | Component | Technology |
 |-----------|-----------|
 | Language | Kotlin (JVM) |
 | Web Server | Ktor (Netty) |
 | Serialization | kotlinx-serialization-json |
-| Model | Pure Kotlin Neural Network (no external AI libs) |
+| Chat model | Pure Kotlin neural network (no external AI libs) |
+| SQL database | Embedded H2 + HikariCP connection pool |
+| SQL translation | `SqlPromptInterpreter` — schema-driven, regex-pattern based NL→SQL |
 
-## Quick Start
-
-```bash
-# Build and run
-./gradlew run
-
-# Server starts at http://localhost:8080
-```
-
-## API Endpoints
-
-### `GET /` — Web UI
-Open `http://localhost:8080` in your browser for an interactive chat interface.
-
-### `POST /chat` — Send a message
-```json
-// Request
-{
-  "message": "Ahoj, jak se máš?",
-  "sessionId": "user123"
-}
-
-// Response
-{
-  "reply": "Jsem jen program, ale funguji skvěle! Děkuji za optání.",
-  "sessionId": "user123",
-  "intent": "how_are_you",
-  "confidence": 0.87,
-  "historyCount": 1,
-  "modelInfo": "TinyNeuralNetwork v1.0 (pure Kotlin, ~320 parameters)"
-}
-```
-
-### `GET /chat/history` — Get conversation history
-```
-GET /chat/history?sessionId=user123
-```
-
-### `POST /chat/clear` — Clear session history
-```json
-{
-  "sessionId": "user123"
-}
-```
-
-### `GET /status` — Model information
-```json
-{
-  "status": "ready",
-  "sessionCount": 0,
-  "modelType": "TinyNeuralNetwork (embed=16)",
-  "vocabularySize": 128
-}
-```
-
-## Example Queries
-
-| Czech Query | English Query | Expected Intent |
-|-------------|---------------|-----------------|
-| Ahoj | Hello | greeting |
-| Nashledanou | Goodbye | farewell |
-| Jak se jmenuješ? | What's your name? | ask_name |
-| Co umíš? | What can you do? | capabilities |
-| Jak se máš? | How are you? | how_are_you |
-| Napiš funkci v Kotlinu | Write a function in Kotlin | programming |
-| Kdo tě vytvořil? | Who made you? | who_made_you |
-| Jaké je počasí? | What's the weather? | weather |
-| Kolik je hodin? | What time is it? | time |
-
-## Project Structure
+## Project structure
 
 ```
 kotlin_ai_assistant/
 ├── build.gradle.kts              # Gradle build with Ktor + dependencies
-├── settings.gradle.kts           # Project settings
-├── gradlew / gradlew.bat         # Gradle wrapper
-├── README.md
-├── src/
-│   └── main/
-│       ├── kotlin/com/assistant/
-│       │   ├── Application.kt                    # Server entry point
-│       │   ├── model/
-│       │   │   ├── SimpleTokenizer.kt            # CZ/EN vocabulary tokenizer
-│       │   │   └── TinyNeuralNetwork.kt          # Neural network (embed → hidden → output)
-│       │   ├── memory/
-│       │   │   └── ConversationMemory.kt         # Session-based conversation history
-│       │   └── routes/
-│       │       └── ChatRoutes.kt                 # REST API + Web UI routes
-│       └── resources/
-│           └── logback.xml                       # Logging config
+├── README.md                     # ← you are here
+├── docs/
+│   ├── SQLAssistant.md           # SQL Assistant docs (main focus)
+│   ├── Chatbot.md                # Chatbot docs
+│   └── sql/                      # SQL docs detail: how-it-works, examples,
+│                                 # synonyms, architecture + screenshots
+└── src/
+    └── main/
+        ├── kotlin/com/assistant/
+        │   ├── Application.kt                    # Server entry point, wiring
+        │   ├── model/                            # SimpleTokenizer + TinyNeuralNetwork
+        │   ├── memory/                           # ConversationMemory
+        │   ├── database/                         # DatabaseManager + SqlPromptInterpreter
+        │   └── routes/                           # ChatRoutes, SqlRoutes
+        └── resources/
+            └── web/index.html                    # Web UI (Chat tab + SQL tab)
 ```
-
-## How the Model Works
-
-1. **Tokenization**: Input text is split into words and mapped to vocabulary indices
-2. **Embedding**: Each word index is converted to a 16-dimensional vector
-3. **Hidden Layer**: Flattened embeddings pass through 32 ReLU neurons
-4. **Output Layer**: Produces scores for 10 intents, converted to probabilities via softmax
-
-The model runs entirely in-process — no network calls, no external dependencies.
