@@ -8,7 +8,7 @@ which executes it on the embedded H2 database.
 
 ```mermaid
 flowchart TD
-    A[Raw prompt<br/>e.g. 'TOP Employee !'] --> B[Normalize<br/>trim + lowercase + collapse spaces]
+    A["Raw prompt\n(e.g. 'TOP Employee !')"] --> B["Normalize\ntrim + lowercase + collapse spaces"]
     B --> C{Route: which sub-interpreter?}
     C -->|starts with 'select'| D[Raw SQL passthrough]
     C -->|'show tables' / 'list tables'| E[SHOW TABLES]

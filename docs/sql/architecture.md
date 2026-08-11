@@ -8,16 +8,16 @@ down to the embedded H2 database.
 ```mermaid
 flowchart LR
     subgraph UI ["Browser"]
-        W["Web UI - index.html<br/>SQL tab with prompt chips"]
+        W["Web UI - index.html\nSQL tab with prompt chips"]
     end
     subgraph Server ["Ktor Server - Netty"]
-        R["SqlRoutes.kt<br/>/sql/query /sql/execute<br/>/sql/schema /sql/prompts"]
-        I["SqlPromptInterpreter.kt<br/>NL to SQL"]
-        S["Schema + value provider<br/>lambdas into DatabaseManager"]
+        R["SqlRoutes.kt\n/sql/query /sql/execute\n/sql/schema /sql/prompts"]
+        I["SqlPromptInterpreter.kt\nNL to SQL"]
+        S["Schema + value provider\nlambdas into DatabaseManager"]
     end
     subgraph Data ["Database layer"]
-        D["DatabaseManager.kt<br/>HikariCP pool"]
-        H2["Embedded H2 DB<br/>departments / employees / products"]
+        D["DatabaseManager.kt\nHikariCP pool"]
+        H2["Embedded H2 DB\ndepartments / employees / products"]
     end
     W -->|"POST /sql/query {prompt}"| R
     R -->|interpret prompt| I

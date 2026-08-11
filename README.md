@@ -10,12 +10,12 @@ AI APIs, no TensorFlow, no Python dependencies. It ships **two assistants in one
 ```mermaid
 flowchart TB
     subgraph App [Kotlin AI Assistant - Ktor Server :8080]
-        C[Chatbot<br/>tiny neural network]
-        S[SQL Assistant<br/>SqlPromptInterpreter]
+        C[Chatbot\ntiny neural network]
+        S[SQL Assistant\nSqlPromptInterpreter]
     end
-    App --> U[Web UI<br/>Chat tab + SQL tab]
+    App --> U[Web UI\nChat tab + SQL tab]
     C -->|POST /chat| CH[Conversation memory + intents]
-    S -->|POST /sql/query| SQ[NL to SQL<br/>embedded H2 database]
+    S -->|POST /sql/query| SQ[NL to SQL\nembedded H2 database]
 ```
 
 > 📚 **Full documentation**
@@ -34,11 +34,11 @@ human-readable explanation**.
 
 ```mermaid
 flowchart LR
-    A["You type a question<br/>e.g. 'top employee'"] --> B["POST /sql/query"]
-    B --> C["SqlPromptInterpreter<br/>understands intent"]
-    C --> D["Generated SQL<br/>SELECT * FROM employees<br/>ORDER BY salary DESC LIMIT 1"]
+    A["You type a question\n(e.g. 'top employee')"] --> B["POST /sql/query"]
+    B --> C["SqlPromptInterpreter\nunderstands intent"]
+    C --> D["Generated SQL\nSELECT * FROM employees\nORDER BY salary DESC LIMIT 1"]
     D --> E["Embedded H2 database"]
-    E --> F["Rows + SQL + explanation<br/>shown in the web UI"]
+    E --> F["Rows + SQL + explanation\nshown in the web UI"]
 ```
 
 ### "It understands human language"

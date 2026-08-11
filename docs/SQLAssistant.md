@@ -7,11 +7,11 @@ the results — plus the generated SQL and a human-readable explanation.
 
 ```mermaid
 flowchart LR
-    A["You type a question<br/>e.g. "top employee""] --> B[POST /sql/query]
-    B --> C[SqlPromptInterpreter<br/>understands intent]
-    C --> D[Generated SQL<br/>SELECT * FROM employees<br/>ORDER BY salary DESC LIMIT 1]
-    D --> E[Embedded H2 database]
-    E --> F[Rows + SQL + explanation<br/>shown in the web UI]
+    A["You type a question\n(e.g. 'top employee')"] --> B["POST /sql/query"]
+    B --> C["SqlPromptInterpreter\nunderstands intent"]
+    C --> D["Generated SQL\nSELECT * FROM employees\nORDER BY salary DESC LIMIT 1"]
+    D --> E["Embedded H2 database"]
+    E --> F["Rows + SQL + explanation\nshown in the web UI"]
 ```
 
 ## What "understands human language" means
