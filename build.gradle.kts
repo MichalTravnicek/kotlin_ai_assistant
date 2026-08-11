@@ -33,6 +33,10 @@ dependencies {
     // Logging
     implementation("ch.qos.logback:logback-classic:1.5.16")
 
+    // Database
+    implementation("com.h2database:h2:2.3.232")
+    implementation("com.zaxxer:HikariCP:5.1.0")
+
     // Test
     testImplementation("org.jetbrains.kotlin:kotlin-test:2.1.10")
     testImplementation("io.ktor:ktor-server-test-host")
