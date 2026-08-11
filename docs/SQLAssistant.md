@@ -13,6 +13,7 @@ flowchart LR
     D --> E["Embedded H2 database"]
     E --> F["Rows + SQL + explanation\nshown in the web UI"]
 ```
+![SQL window](sql_cz.png)
 
 ## What "understands human language" means
 
@@ -62,7 +63,7 @@ curl -X POST http://localhost:8080/sql/query \
 | `GET /sql/schema` | Live database schema (tables & columns) |
 | `GET /sql/prompts` | Example prompts shown as chips in the UI |
 
-## Screenshots
+## Usage examples
 
 The web UI in action (full-resolution PNGs in this folder):
 

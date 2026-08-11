@@ -24,8 +24,11 @@ flowchart TB
 > - [**Chatbot docs**](docs/Chatbot.md) — features, chat API, model internals
 
 ---
+## 💬️ Chatbot
+![Chatbot window](docs/chat_cz.png)
 
-## 🗄️ SQL Assistant (main focus)
+## 🗄️ SQL Assistant 💣
+![SQL window](docs/sql_cz.png)
 
 The **SQL Assistant** is the flagship feature: you type a plain-English (or plain-Czech 🇨🇿)
 question and it *understands* it, translates it into a real SQL query, runs it against the
@@ -58,11 +61,7 @@ extremes (`cheapest product`), bare conditions (`price > 900`), raw SQL passthro
 **English and Czech**. Every supported phrase and every synonym is catalogued in the
 [SQL Assistant docs](docs/SQLAssistant.md).
 
-### SQL quick start
-
-```bash
-./gradlew run        # server starts at http://localhost:8080
-```
+### How to use
 
 Open `http://localhost:8080`, switch to the **SQL** tab and type a prompt (the UI shows
 example prompts as clickable chips), or call the API:
@@ -108,7 +107,7 @@ Full details — features, API reference, model internals, project structure —
 
 ---
 
-## Quick start (both)
+## Quick start
 
 ```bash
 ./gradlew run        # http://localhost:8080 — Chat tab + SQL tab
